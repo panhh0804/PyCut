@@ -1,5 +1,5 @@
 import {interpolate, spring, useCurrentFrame, useVideoConfig} from 'remotion';
-import {asNumber, asNumbers, asString, asStrings, SceneShell, type SceneComponentProps} from './SceneShell';
+import {asNumber, asNumbers, asString, asStrings, SceneShell, withAlpha, type SceneComponentProps} from './SceneShell';
 
 export function DynamicChart(input: SceneComponentProps) {
   const frame = useCurrentFrame();
@@ -28,7 +28,7 @@ export function DynamicChart(input: SceneComponentProps) {
           </div>
           <div style={{padding: '18px 26px', background: 'rgba(255,255,255,.04)', border: `1px solid ${accent}50`, borderRadius: 18, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', color: accent, fontSize: 25}}>{asString(input.props.formula)}</div>
         </div>
-        <div style={{marginTop: 55, height: 530, borderRadius: 28, padding: '44px 52px 30px', background: 'rgba(16,36,58,.68)', border: '1px solid rgba(255,255,255,.08)', position: 'relative'}}>
+        <div style={{marginTop: 55, height: 530, borderRadius: 28, padding: '44px 52px 30px', background: withAlpha(input.spec.style.tokens.surface, 'D0'), border: '1px solid rgba(255,255,255,.08)', position: 'relative'}}>
           {[0, 1, 2, 3].map((line) => <div key={line} style={{position: 'absolute', left: 52, right: 52, top: 48 + line * 110, height: 1, background: 'rgba(141,167,184,.16)'}} />)}
           {chartType === 'line' ? (
             <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{display: 'block', margin: '0 auto', overflow: 'visible'}}>
@@ -48,4 +48,3 @@ export function DynamicChart(input: SceneComponentProps) {
     </SceneShell>
   );
 }
-

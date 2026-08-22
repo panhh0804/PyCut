@@ -3,6 +3,7 @@ import path from 'node:path';
 import puppeteer from 'puppeteer-core';
 
 const outputDir = path.join(process.cwd(), 'output', 'verification');
+const origin = process.env.PICUT_ORIGIN ?? 'http://localhost:3000';
 await mkdir(outputDir, {recursive: true});
 
 const browser = await puppeteer.launch({
@@ -28,7 +29,7 @@ const waitForText = async (selector, pattern, timeout = 30_000) => {
 };
 
 try {
-  const response = await page.goto('http://localhost:3000', {waitUntil: 'networkidle0', timeout: 60_000});
+  const response = await page.goto(origin, {waitUntil: 'networkidle0', timeout: 60_000});
   if (!response?.ok()) throw new Error(`home status ${response?.status()}`);
   await waitForText('.brand-lockup', /πCut/);
   await waitForText('.quality-pill', /G1–G7 Ready/);

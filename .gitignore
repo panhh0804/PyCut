@@ -8,6 +8,8 @@
 # generated video artifacts
 /output/
 /public/renders/
+/public/audio/
+/public/media/
 /.picut/
 
 # local environment

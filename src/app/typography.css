@@ -1,0 +1,128 @@
+/*
+ * Studio readability pass: every interface font is exactly one pixel larger
+ * than the original scale. This file is intentionally loaded last so the
+ * sizing policy stays centralized and easy to audit.
+ */
+html,
+body {
+  font-size: 17px;
+}
+
+.brand-mark { font-size: 24px; }
+.brand-lockup strong { font-size: 18px; }
+
+.brand-lockup span,
+.panel-heading>span,
+.avatar,
+.toolbar-tabs button,
+.scene-number,
+.stage-caption strong,
+.inspector-tabs button,
+.readonly-field strong,
+.color-field code,
+.property-section textarea,
+.ownership-button span,
+.notice button { font-size: 10px; }
+
+.project-breadcrumb,
+.panel-heading strong { font-size: 13px; }
+
+.revision-chip { font-size: 11px !important; }
+
+.quality-pill,
+.backend-select,
+.chat-context strong,
+.prompt-box textarea,
+.preview-loading,
+.timeline-header strong,
+.notice,
+.render-toast strong,
+.approval-card p { font-size: 11px; }
+
+.backend-select select,
+.export-button,
+.message p { font-size: 12px; }
+
+.chat-context span,
+.message-meta,
+.prompt-box span,
+.suggestions button,
+.canvas-meta,
+.stage-caption span:not(.scene-number),
+.stage-caption button,
+.timeline-header span,
+.property-section>label,
+.label-row label,
+.label-row span,
+.label-row svg,
+.ownership-button strong,
+.saving,
+.render-toast span,
+.render-toast a,
+.approval-head span,
+.approval-card button { font-size: 9px; }
+
+.ruler span,
+.track-label span,
+.timeline-clip span,
+.timeline-clip strong,
+.range-labels,
+.gate-row,
+.gate-row strong,
+.approval-head strong,
+.approval-card small { font-size: 8px; }
+
+.timeline-clip small { font-size: 7px; }
+.error-page h1 { font-size: 25px; }
+
+.preview-load-error {
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+  padding: 24px;
+  text-align: center;
+}
+
+.preview-load-error > svg {
+  color: var(--orange);
+}
+
+.preview-load-error strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.preview-load-error span {
+  max-width: 440px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.preview-load-error button {
+  margin-top: 4px;
+  border: 1px solid rgba(56, 224, 193, 0.28);
+  border-radius: 8px;
+  background: rgba(56, 224, 193, 0.1);
+  color: var(--teal);
+  padding: 7px 12px;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.trace-run-select {
+  width: 100%;
+  height: 28px;
+  margin-bottom: 7px;
+  border: 1px solid rgba(79, 118, 140, 0.28);
+  border-radius: 6px;
+  background: #0c1c29;
+  color: #92a8b6;
+  padding: 0 7px;
+  font-size: 8px;
+  outline: none;
+}
+
+.trace-run-select:focus {
+  border-color: rgba(56, 224, 193, 0.45);
+}

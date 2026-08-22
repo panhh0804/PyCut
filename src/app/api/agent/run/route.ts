@@ -1,6 +1,7 @@
 import {NextResponse} from 'next/server';
 import {z} from 'zod';
 import {runPiCutAgent} from '@/lib/agent/runtime';
+import {appendProjectAgentRun, appendProjectChat} from '@/lib/project/store';
 
 export const runtime = 'nodejs';
 
@@ -12,9 +13,23 @@ const requestSchema = z.object({
 export async function POST(request: Request) {
   try {
     const input = requestSchema.parse(await request.json());
-    return NextResponse.json(await runPiCutAgent(input.projectId, input.prompt));
+    const result = await runPiCutAgent(input.projectId, input.prompt);
+    const now = new Date().toISOString();
+    await appendProjectChat(input.projectId, [
+      {id: crypto.randomUUID(), role: 'human', text: input.prompt, meta: 'You', createdAt: now},
+      {id: crypto.randomUUID(), role: 'agent', text: result.response, meta: `${result.model} · ${result.executionMode}`, createdAt: new Date().toISOString()},
+    ]);
+    const traceRun = {
+      id: crypto.randomUUID(),
+      prompt: input.prompt,
+      model: result.model,
+      executionMode: result.executionMode,
+      createdAt: now,
+      events: result.events,
+    };
+    await appendProjectAgentRun(input.projectId, traceRun);
+    return NextResponse.json({...result, traceRun});
   } catch (error) {
     return NextResponse.json({error: error instanceof Error ? error.message : 'Agent 执行失败'}, {status: 400});
   }
 }
-

@@ -34,20 +34,26 @@ export function validateVideoSpec(input: VideoSpec): ValidationReport {
   const spec = input;
   const storyIds = new Set(spec.storySpec?.scenes?.map((scene) => scene.id) ?? []);
   const editIds = new Set(spec.editSpec?.scenes?.map((scene) => scene.id) ?? []);
+  const trackIds = new Set(spec.editSpec?.tracks?.map((track) => track.id) ?? []);
   const semanticErrors = [
     ...[...storyIds].filter((id) => !editIds.has(id)).map((id) => `StoryScene ${id} 没有对应 EditScene`),
     ...[...editIds].filter((id) => !storyIds.has(id)).map((id) => `EditScene ${id} 没有对应 StoryScene`),
+    ...(spec.editSpec?.scenes ?? []).filter((scene) => !trackIds.has(scene.trackId)).map((scene) => `${scene.id} 引用了不存在的轨道 ${scene.trackId}`),
   ];
   const timelineErrors: string[] = [];
   const timelineWarnings: string[] = [];
   const ordered = [...(spec.editSpec?.scenes ?? [])].sort((a, b) => a.startFrame - b.startFrame);
-  ordered.forEach((scene, index) => {
-    const previous = ordered[index - 1];
-    if (previous) {
-      const previousEnd = previous.startFrame + previous.durationFrames;
-      if (scene.startFrame < previousEnd) timelineErrors.push(`${previous.id} 与 ${scene.id} 时间重叠`);
-      if (scene.startFrame > previousEnd) timelineWarnings.push(`${previous.id} 与 ${scene.id} 之间有 ${scene.startFrame - previousEnd} 帧空隙`);
-    }
+  const visualTrackIds = (spec.editSpec?.tracks ?? []).filter((track) => track.kind === 'video' || track.kind === 'overlay').map((track) => track.id);
+  visualTrackIds.forEach((trackId) => {
+    const clips = ordered.filter((scene) => scene.trackId === trackId);
+    clips.forEach((scene, index) => {
+      const previous = clips[index - 1];
+      if (previous) {
+        const previousEnd = previous.startFrame + previous.durationFrames;
+        if (scene.startFrame < previousEnd) timelineErrors.push(`${trackId}：${previous.id} 与 ${scene.id} 时间重叠`);
+        if (scene.startFrame > previousEnd) timelineWarnings.push(`${trackId}：${previous.id} 与 ${scene.id} 之间有 ${scene.startFrame - previousEnd} 帧空隙`);
+      }
+    });
   });
   const totalFrames = ordered.reduce((max, scene) => Math.max(max, scene.startFrame + scene.durationFrames), 0);
   const maxFrames = Math.round((spec.constraints.maxDurationMs / 1000) * spec.canvas.fps);
@@ -61,7 +67,13 @@ export function validateVideoSpec(input: VideoSpec): ValidationReport {
     return result.success ? [] : result.error.issues.map((issue) => `${scene.id}.${issue.path.join('.')}: ${issue.message}`);
   });
   const audiovisualWarnings: string[] = [];
-  if (!spec.editSpec?.globalAudio?.narrationAssetId) audiovisualWarnings.push('当前使用文本旁白节奏模拟，未绑定旁白音频');
+  const narrationId = spec.editSpec?.globalAudio?.narrationAssetId;
+  const narrationAsset = (spec.assets ?? []).find((asset) => asset.id === narrationId);
+  const segments = spec.editSpec?.globalAudio?.narrationSegments ?? [];
+  if (!narrationId) audiovisualWarnings.push('当前使用文本旁白节奏模拟，未绑定旁白音频');
+  else if (!narrationAsset) audiovisualWarnings.push('旁白主音轨没有对应资产');
+  else if (segments.length !== (spec.editSpec?.scenes?.length ?? 0)) audiovisualWarnings.push('旁白分段数量与镜头数量不一致');
+  else if (segments.some((segment) => Math.abs(segment.renderedDurationMs - segment.durationFrames / spec.canvas.fps * 1000) > 80)) audiovisualWarnings.push('至少一段旁白与镜头时长偏差超过 80ms');
   if (!spec.editSpec?.globalAudio?.bgmAssetId) audiovisualWarnings.push('未绑定 BGM，最终输出将保持干净无配乐');
   const deliveryErrors = spec.schemaVersion !== '1.0.0' ? ['交付版本不是 1.0.0'] : [];
   const gates = [

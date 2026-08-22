@@ -1,5 +1,5 @@
 import {interpolate, spring, useCurrentFrame, useVideoConfig} from 'remotion';
-import {asString, asStrings, SceneShell, type SceneComponentProps} from './SceneShell';
+import {asString, asStrings, SceneShell, withAlpha, type SceneComponentProps} from './SceneShell';
 
 export function SplitScreen(input: SceneComponentProps) {
   const frame = useCurrentFrame();
@@ -23,7 +23,7 @@ export function SplitScreen(input: SceneComponentProps) {
         <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 26}}>
           {cards.map((card, index) => {
             const local = interpolate(enter, [0, 1], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
-            return <div key={card.index} style={{position: 'relative', borderRadius: input.spec.style.tokens.radius, padding: '52px 54px', border: `1px solid ${card.tint}48`, background: `linear-gradient(145deg, ${card.tint}17, rgba(16,36,58,.72))`, overflow: 'hidden', transform: `translateX(${(1 - local) * (index ? 70 : -70)}px)`, opacity: local}}>
+            return <div key={card.index} style={{position: 'relative', borderRadius: input.spec.style.tokens.radius, padding: '52px 54px', border: `1px solid ${card.tint}48`, background: `linear-gradient(145deg, ${card.tint}17, ${withAlpha(input.spec.style.tokens.surface, 'D8')})`, overflow: 'hidden', transform: `translateX(${(1 - local) * (index ? 70 : -70)}px)`, opacity: local}}>
               <div style={{position: 'absolute', width: 240, height: 240, borderRadius: '50%', border: `50px solid ${card.tint}0D`, right: -56, top: -62}} />
               <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
                 <span style={{fontSize: 18, letterSpacing: 3, color: card.tint}}>LAYER {card.index}</span>
@@ -39,4 +39,3 @@ export function SplitScreen(input: SceneComponentProps) {
     </SceneShell>
   );
 }
-

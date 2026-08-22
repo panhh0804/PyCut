@@ -10,9 +10,13 @@
 - SiliconFlow OpenAI-compatible 模型调用，支持主模型和故障回退。
 - 完整 ReAct 循环：Observe → Tool Call → Tool Result → Validate → Reply。
 - StorySpec + EditSpec 双层 VideoSpec，具备 Schema、revision、provenance 和稳定 Scene ID。
-- 六个受控 Agent 工具：建项、分镜、Patch、校验、预览渲染、正式导出。
-- 四个强类型原子组件：`TextHero`、`SplitScreen`、`DynamicChart`、`CaptionKaraoke`。
-- Remotion 和 HyperFrames 双引擎真实 1080p MP4 导出。
+- 八个受控 Agent 工具：建项、原生分镜、Patch、校验、联网素材、旁白合成、预览渲染、正式导出。
+- 五个强类型原子组件：`TextHero`、`SplitScreen`、`DynamicChart`、`CaptionKaraoke`、`MediaBroll`。
+- 新建会话由远程 π Agent 从空白需求生成独立 StorySpec / EditSpec；模型未调用 `draft_storyboard` 时创建失败，绝不回退到示例视频。
+- Remotion、HyperFrames 与第三个“自主路由”选项；路由评分、置信度、依据和自动失败回退进入 RenderManifest 与会话 Agent 轨迹。
+- SiliconFlow TTS、自然语速分段、短淡入淡出、精确留白、多轨波形与音画对齐。
+- NOAA Ocean Explorer / Wikimedia Commons 可追溯素材搜索、许可过滤、本地资产化与 B-roll 运镜。
+- 多会话持久化、运行轨迹持久化、会话内历史 Run 切换与可恢复归档。
 - Chat + Remotion Player + 可拖拽分镜时间轴 + Inspector 组成的暗色编辑工作台。
 - UI 修改、Agent 修改和时间轴拖动统一提交为 ChangeSet。
 - 乐观版本控制、字段锁、镜头锁、撤销、冲突拒绝和人工审批。
@@ -22,7 +26,7 @@
 ## 系统架构
 
 ```mermaid
-%%{init: {"theme":"base","themeVariables":{"primaryColor":"#0E2534","primaryTextColor":"#E8F4F8","primaryBorderColor":"#38E0C1","lineColor":"#63879A","secondaryColor":"#132F42","tertiaryColor":"#2A1D21","fontFamily":"Inter, PingFang SC, sans-serif"},"flowchart":{"curve":"basis","nodeSpacing":30,"rankSpacing":42}}}%%
+%%{init: {"theme":"base","themeVariables":{"background":"#F7FBFC","primaryColor":"#EFFAF7","primaryTextColor":"#16333D","primaryBorderColor":"#2CBFA5","lineColor":"#7695A0","secondaryColor":"#EEF5FF","tertiaryColor":"#FFF5ED","clusterBkg":"#FFFFFF","clusterBorder":"#C8DCE2","edgeLabelBackground":"#FFFFFF","fontFamily":"Inter, PingFang SC, sans-serif","fontSize":"13px"},"flowchart":{"curve":"basis","nodeSpacing":30,"rankSpacing":42,"padding":14}}}%%
 flowchart TB
     subgraph EXPERIENCE["01 · Interaction & Collaboration"]
       CHAT["Director Chat"]
@@ -34,7 +38,8 @@ flowchart TB
     subgraph AGENT["02 · π Agent Core"]
       REACT["ReAct Loop"]
       POLICY["Approval / Ownership Policy"]
-      TOOLS["Six Typed Tools"]
+      TOOLS["Eight Typed Tools"]
+      TRACE[("Persistent Agent Runs")]
     end
 
     subgraph SPEC["03 · VideoSpec IR"]
@@ -46,6 +51,7 @@ flowchart TB
     subgraph ENGINES["04 · Deterministic Rendering"]
       REMOTION["Remotion Adapter"]
       HF["HyperFrames Adapter"]
+      ROUTER{"Autonomous Router"}
       COMPONENTS["Typed Component Registry"]
     end
 
@@ -59,16 +65,17 @@ flowchart TB
     CHAT --> REACT --> TOOLS
     POLICY --> TOOLS
     TOOLS --> STORY & EDIT & CHANGE
+    REACT --> TRACE
     CHANGE --> EDIT
     STORY --> EDIT
     EDIT --> GATES
     GATES --> COMPONENTS
-    COMPONENTS --> REMOTION & HF
+    COMPONENTS --> ROUTER --> REMOTION & HF
     REMOTION & HF --> PROBES --> PACKAGE
     PLAYER -. "same snapshot" .-> EDIT
 
-    classDef teal fill:#0E2D38,stroke:#38E0C1,color:#EAFBF8,stroke-width:2px;
-    classDef orange fill:#30201F,stroke:#FF8A5B,color:#FFF3ED,stroke-width:2px;
+    classDef teal fill:#E8F9F5,stroke:#22B89E,color:#123B36,stroke-width:2px;
+    classDef orange fill:#FFF0E6,stroke:#F47F50,color:#66301F,stroke-width:2px;
     class REACT,TOOLS,REMOTION,HF,PLAYER,TIMELINE teal;
     class POLICY,CHANGE,GATES,PACKAGE orange;
 ```
@@ -76,7 +83,7 @@ flowchart TB
 ### 人机协同状态流
 
 ```mermaid
-%%{init: {"theme":"base","themeVariables":{"primaryColor":"#0E2534","primaryTextColor":"#E8F4F8","primaryBorderColor":"#38E0C1","lineColor":"#6B8B9C","fontFamily":"Inter, PingFang SC, sans-serif"}}}%%
+%%{init: {"theme":"base","themeVariables":{"background":"#F7FBFC","primaryColor":"#EDF9F6","primaryTextColor":"#173840","primaryBorderColor":"#2CBFA5","lineColor":"#7897A2","secondaryColor":"#EEF5FF","tertiaryColor":"#FFF4EC","mainBkg":"#FFFFFF","secondBkg":"#F4F8FA","stateBkg":"#FFFFFF","stateBorder":"#43B9A5","stateLabelColor":"#173840","labelBackgroundColor":"#FFFFFF","edgeLabelBackground":"#FFFFFF","fontFamily":"Inter, PingFang SC, sans-serif","fontSize":"11px"}}}%%
 stateDiagram-v2
     [*] --> Observing: 用户指令 / UI 事件
     Observing --> Acting: 选择受控工具
@@ -127,11 +134,23 @@ PICUT_CHROME_EXECUTABLE=/absolute/path/to/chrome
 
 `PICUT_AGENT_MODE` 支持：
 
-- `auto`：优先远程模型，失败时回退到本地确定性 Planner。
+- `auto`：编辑任务优先远程模型，失败时可回退到本地确定性 Planner；新建视频始终要求远程 π Agent 成功调用 `draft_storyboard`，不会回退到示例或缓存。
 - `remote`：只使用远程模型，错误直接返回。
 - `local`：不请求外部模型，用于测试和离线开发。
 
 ## Studio 交互
+
+### 新建会话 → 从零生成
+
+在 `Sessions` 面板输入完整需求，例如：
+
+```text
+生成一个 11 秒的深海热液喷口科普视频，画面要有真实海底素材、动态结构解释和节奏字幕
+```
+
+创建期间会显示独立生成遮罩。服务端仅在 π Agent 完成 `draft_storyboard`、VideoSpec 校验和持久化后切换会话；失败时保留当前会话并显示错误，不会载入旧视频。
+
+左侧 `Agent 轨迹` 可以在历次 Run 之间切换，查看模型、执行模式、Observe → Act 回合、工具结果、质量门、联网素材状态和引擎路由决策。
 
 ### Chat → Agent
 
@@ -147,7 +166,7 @@ Agent 将调用 `apply_spec_patch`，观察工具结果，再调用 `validate_sp
 
 - 选择任一 Scene，拖动左侧手柄调整入点。
 - 拖动右侧手柄调整出点，后续 Scene 自动级联平移。
-- 拖动以 0.5 秒为吸附精度，单 Scene 最短 3 秒。
+- 拖动支持可调吸附，单 Scene 最短 0.1 秒；Inspector 的 Duration 同样以 0.1 秒为下限。
 - 松手时才提交一个原子 ChangeSet，并在 Director 中生成 `UI → VideoSpec → Agent` 事件。
 
 ### Human checkpoint
@@ -159,9 +178,11 @@ Agent 将调用 `apply_spec_patch`，观察工具结果，再调用 `validate_sp
 | 工具 | 职责 | 风险策略 |
 |---|---|---|
 | `create_project` | 创建或明确重置项目 | 仅用户明确要求时调用 |
-| `draft_storyboard` | 观察 StorySpec / EditSpec 并生成分镜 | 不运行任意代码 |
+| `draft_storyboard` | π Agent 原生输出本次需求的完整结构化分镜 | 未调用则拒绝新建，不使用预设回退 |
 | `apply_spec_patch` | 自然语言转受审计 ChangeSet | 尊重字段锁与镜头锁 |
 | `validate_spec` | 运行 G1–G7 确定性质量门 | 任一阻断项拒绝渲染 |
+| `search_media` | 按主题路由可信素材源并写入可追溯 B-roll | 校验来源、署名、许可和可信下载域 |
+| `synthesize_narration` | SiliconFlow TTS、分段处理与主轨混音 | 服务端密钥、自然语速、镜头尾部留白 |
 | `render_preview` | 导出可快速检查的预览产物 | 校验通过后才执行 |
 | `render_final` | 生成正式成片和五件套 | 必须是当前用户明确导出意图 |
 
@@ -201,7 +222,7 @@ VideoSpec 是持久化的工程真相；Remotion TSX 和 HyperFrames HTML 都是
 
 ### 通过 Studio
 
-1. 在顶部 `Engine` 中选择 Remotion 或 HyperFrames。
+1. 在顶部 `Engine` 中选择“自主路由”（默认）、Remotion 或 HyperFrames。
 2. 确认 `G1–G7 Ready`。
 3. 点击 `Export MP4`。
 4. 完成后在右下角下载 MP4 或查看 RenderManifest。
@@ -214,6 +235,7 @@ VideoSpec 是持久化的工程真相；Remotion TSX 和 HyperFrames HTML 都是
 npm run render:demo -- remotion preview
 npm run render:demo -- remotion final
 npm run render:demo -- hyperframes final
+# Studio/API 还支持 backend=auto；自主路由结果会写入 RenderManifest 与 Agent 轨迹。
 ```
 
 产物位于：
@@ -237,8 +259,8 @@ public/renders/<project>-r<revision>-<backend>-<mode>/
 | G2 | StoryScene / EditScene 语义引用完整性 | 错误阻断 |
 | G3 | 帧边界、重叠、空隙和最大时长 | 错误阻断，空隙警告 |
 | G4 | 素材 src 与资产契约 | 错误阻断 |
-| G5 | 组件注册与四类 Props Schema | 错误阻断 |
-| G6 | 旁白、BGM 和视听对齐准备度 | 当前 Demo 无音轨时给出警告 |
+| G5 | 组件注册与五类 Props Schema | 错误阻断 |
+| G6 | 分段旁白、BGM 和视听对齐准备度 | 缺少 BGM 时保留非阻断提醒 |
 | G7 | 交付版本与清单完整性 | 错误阻断 |
 
 HyperFrames 正式导出前还经过其原生 `lint + runtime + layout + contrast` 门禁；Remotion 通过编译、Player 预览、服务端渲染和多时间点帧抽检验收。
@@ -257,11 +279,14 @@ npm run verify
 
 ```bash
 node scripts/e2e.mjs
+node scripts/verify-generated-session.mjs <project-id>
+node scripts/verify-auto-route-hyperframes.mjs <project-id>
+# 非 3000 端口可设置 PICUT_ORIGIN，例如 PICUT_ORIGIN=http://localhost:3001。
 ```
 
 E2E 覆盖：
 
-- 首屏、Player 和 6 个 Timeline Clip。
+- 首屏、Player 和当前会话的动态 Timeline Clip。
 - 选中 Scene 与 Player seek 同步。
 - 拖动出点、级联时间轴、ChangeSet 和撤销。
 - 结构删除提案、审批卡和人工拒绝。
@@ -275,11 +300,14 @@ E2E 覆盖：
 | Method | Route | 用途 |
 |---|---|---|
 | `POST` | `/api/agent/run` | 运行一轮 π Agent / ReAct |
+| `GET/POST` | `/api/projects` | 列出持久化会话 / 由远程 π Agent 从零创建会话 |
 | `GET` | `/api/config` | 只返回非敏感运行配置 |
 | `GET` | `/api/projects/:id` | 项目、历史、变更和质量报告 |
 | `POST` | `/api/projects/:id/changesets` | 提交人类 UI ChangeSet |
 | `POST` | `/api/projects/:id/undo` | 恢复前一快照并生成新 revision |
-| `POST` | `/api/projects/:id/render` | 调用双引擎预览/正式导出 |
+| `POST` | `/api/projects/:id/audio/synthesize` | 合成、校准并写入分段旁白与主音轨 |
+| `POST` | `/api/projects/:id/media/enrich` | 搜索、下载并注入带来源信息的素材 |
+| `POST` | `/api/projects/:id/render` | 人工指定或自主路由双引擎预览/正式导出 |
 
 ## 目录结构
 
@@ -293,11 +321,13 @@ src/
 │   └── RemotionPreview.tsx    # 客户端动态 Player
 ├── lib/
 │   ├── agent/                  # π Agent、ReAct、指令转 Patch
-│   ├── project/                # revision、快照、撤销、待审批状态
-│   ├── render/                 # Remotion / HyperFrames Adapter
+│   ├── audio/                  # TTS、时长校准、波形和混音
+│   ├── project/                # revision、会话、轨迹、撤销、待审批状态
+│   ├── render/                 # Remotion / HyperFrames Adapter 与自主路由
+│   ├── research/               # 可追溯联网素材源
 │   └── video-spec/             # Schema、编译、Patch、G1–G7
 └── remotion/
-    ├── components/             # 四个原子视频组件
+    ├── components/             # 五个原子视频组件
     └── VideoComposition.tsx    # 帧级编排
 ```
 
@@ -306,13 +336,13 @@ src/
 - `.env.local` 被 `.gitignore` 的 `.env*` 规则排除，且只保存 secret 文件路径；真实值位于同样被忽略的 `.picut/secrets/model-api-key`。
 - 模型配置模块仅在服务端加载；`/api/config` 不返回密钥。
 - HyperFrames 子进程使用显式最小环境白名单，不继承 `PICUT_MODEL_*` 或其他业务密钥。
-- Agent 只能调用六个带 Schema 的领域工具，没有任意 Shell 或生产文件写入权限。
+- Agent 只能调用八个带 Schema 的领域工具，没有任意 Shell 权限；素材写入限定在项目资产目录与可信域。
 - 最终渲染前固定 VideoSpec revision，RenderManifest 记录规范摘要和视频 SHA-256。
 - 高风险结构操作必须在另一轮人类确认后提交。
 
 ## 当前边界与演进接口
 
-当前默认案例是 6 Scene、60–62 秒的 Transformer 知识解说。它使用文本旁白节奏，未绑定真实旁白和 BGM，因此 G6 保留可见警告，不伪装为已完成的音频链路。
+当前工作台仍提供一个本地默认工程用于首次启动，但所有“新建会话”都必须由远程 π Agent 从零生成。BGM、ASR 字级时间戳和通用全网视频素材仍属于后续能力；缺少 BGM 时 G6 给出可见但不阻断的提醒。Wikimedia Commons 在部分网络环境可能不可达，海洋主题已经具备 NOAA Ocean Explorer 官方源路由。
 
 已预留的下一阶段接口包括：
 

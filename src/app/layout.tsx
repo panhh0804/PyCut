@@ -2,6 +2,8 @@ import type {Metadata} from 'next';
 import './globals.css';
 import './timeline.css';
 import './interaction.css';
+import './typography.css';
+import './nle.css';
 
 export const metadata: Metadata = {
   title: 'πCut — Agentic Video Compiler',

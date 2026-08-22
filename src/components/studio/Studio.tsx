@@ -1,69 +1,148 @@
 'use client';
 
-import dynamic from 'next/dynamic';
-import {useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type PointerEvent as ReactPointerEvent} from 'react';
+import {Component, useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode} from 'react';
+import {useRouter} from 'next/navigation';
 import {
+  Archive,
   Bot,
   Check,
   ChevronDown,
   CircleAlert,
   Download,
-  Gauge,
+  Folders,
   LoaderCircle,
   Lock,
   MessageSquareText,
   MonitorPlay,
   MousePointer2,
   PanelRight,
-  Play,
+  Pencil,
+  Plus,
   RotateCcw,
   Send,
   Sparkles,
+  Volume2,
   Unlock,
   WandSparkles,
+  Workflow,
 } from 'lucide-react';
-import type {ChangeSet, VideoSpec} from '@/lib/video-spec/schema';
+import type {ChangeSet, PatchOperation, VideoSpec} from '@/lib/video-spec/schema';
 import type {ValidationReport} from '@/lib/video-spec/validation';
+import type {ProjectAgentRun} from '@/lib/project/store';
+import {VIDEO_THEME_PRESETS, type VideoThemeName} from '@/lib/video-spec/themes';
+import RemotionPreview from './RemotionPreview';
+import {TimelineEditor} from './TimelineEditor';
 
-const RemotionPreview = dynamic(() => import('./RemotionPreview'), {
-  ssr: false,
-  loading: () => <div className="preview-loading"><LoaderCircle className="spin" /> 正在装载确定性画布…</div>,
-});
+function PreviewRecovery({reason = '画布模块加载失败'}: {reason?: string}) {
+  return (
+    <div className="preview-loading preview-load-error" role="alert">
+      <CircleAlert size={20}/>
+      <strong>{reason}</strong>
+      <span>请确认 πCut 本地服务仍在运行，然后重新载入画布。</span>
+      <button type="button" onClick={() => window.location.reload()}>重新载入画布</button>
+    </div>
+  );
+}
+
+class PreviewErrorBoundary extends Component<{children: ReactNode}, {failed: boolean}> {
+  state = {failed: false};
+
+  static getDerivedStateFromError() {
+    return {failed: true};
+  }
+
+  render() {
+    if (this.state.failed) return <PreviewRecovery reason="画布渲染失败"/>;
+    return this.props.children;
+  }
+}
 
 interface ChatMessage {id: string; role: 'agent' | 'human'; text: string; meta?: string}
-interface RenderResult {urls: {video: string; spec: string; subtitles: string; assets: string; manifest: string}}
-interface StudioProps {initialSpec: VideoSpec; initialValidation: ValidationReport; initialPendingApproval: ChangeSet | null}
+interface RenderResult {
+  urls: {video: string; spec: string; subtitles: string; assets: string; manifest: string};
+  routing?: {selected: 'remotion' | 'hyperframes'; confidence: number; scores: {remotion: number; hyperframes: number}; reasons: string[]; fallback: 'remotion' | 'hyperframes'; executed?: 'remotion' | 'hyperframes'; fallbackApplied?: boolean; fallbackReason?: string} | null;
+  traceRun?: ProjectAgentRun;
+}
+interface SessionSummary {id: string; title: string; durationMs: number; revision: number; updatedAt: string; hasNarration: boolean}
+interface StudioProps {
+  projectId: string;
+  sessions: SessionSummary[];
+  initialMessages: ChatMessage[];
+  initialAgentRuns: ProjectAgentRun[];
+  initialSpec: VideoSpec;
+  initialValidation: ValidationReport;
+  initialPendingApproval: ChangeSet | null;
+}
 
-const PROJECT_ID = 'transformer-60s';
+const starterMessage = (spec: VideoSpec): ChatMessage => ({
+  id: 'hello',
+  role: 'agent',
+  text: `已载入「${spec.project.title}」：${spec.storySpec.scenes.length} 个分镜，目标时长 ${(spec.project.targetDurationMs / 1000).toFixed(0)} 秒。你可以继续修改、生成旁白或导出成片。`,
+  meta: 'π Agent · ready',
+});
 
-const starterMessages: ChatMessage[] = [
-  {id: 'hello', role: 'agent', text: '已观察项目：60 秒 Transformer 注意力机制，6 个分镜已编译。你可以直接描述局部修改，或在右侧与时间轴手动调整。', meta: 'π Agent · ready'},
-];
-
-export function Studio({initialSpec, initialValidation, initialPendingApproval}: StudioProps) {
+export function Studio({projectId, sessions, initialMessages, initialAgentRuns, initialSpec, initialValidation, initialPendingApproval}: StudioProps) {
+  const router = useRouter();
+  const initialScene = initialSpec.editSpec.scenes[0];
+  const initialPreviewFrame = initialScene ? initialScene.startFrame + Math.min(initialScene.durationFrames - 1, Math.max(1, Math.round(initialSpec.canvas.fps * 0.35))) : 0;
   const [spec, setSpec] = useState(initialSpec);
   const [validation, setValidation] = useState(initialValidation);
-  const [messages, setMessages] = useState<ChatMessage[]>(starterMessages);
+  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages.length ? initialMessages : [starterMessage(initialSpec)]);
   const [prompt, setPrompt] = useState('');
   const [selectedSceneId, setSelectedSceneId] = useState(initialSpec.editSpec.scenes[0]?.id ?? '');
-  const [busy, setBusy] = useState<'agent' | 'save' | 'render' | 'undo' | null>(null);
-  const [renderBackend, setRenderBackend] = useState<'remotion' | 'hyperframes'>('remotion');
+  const [busy, setBusy] = useState<'agent' | 'save' | 'render' | 'undo' | 'audio' | null>(null);
+  const [renderBackend, setRenderBackend] = useState<'auto' | 'remotion' | 'hyperframes'>('auto');
   const [renderResult, setRenderResult] = useState<RenderResult | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pendingApproval, setPendingApproval] = useState<ChangeSet | null>(initialPendingApproval);
-  const timelineCleanupRef = useRef<(() => void) | null>(null);
+  const [sessionOpen, setSessionOpen] = useState(false);
+  const [newSessionBrief, setNewSessionBrief] = useState('');
+  const [ttsVoice, setTtsVoice] = useState(initialSpec.editSpec.globalAudio.tts.voice);
+  const [ttsModel, setTtsModel] = useState(initialSpec.editSpec.globalAudio.tts.model);
+  const [ttsSpeed, setTtsSpeed] = useState(initialSpec.editSpec.globalAudio.tts.speed);
+  const [inspectorTab, setInspectorTab] = useState<'scene' | 'style' | 'motion'>('scene');
+  const [playheadFrame, setPlayheadFrame] = useState(initialPreviewFrame);
+  const [seekFrame, setSeekFrame] = useState(initialPreviewFrame);
+  const [playing, setPlaying] = useState(false);
+  const [transport, setTransport] = useState<{id: number; action: 'play' | 'pause'}>({id: 0, action: 'pause'});
+  const [creationBrief, setCreationBrief] = useState<string | null>(null);
+  const [creationPanelOpen, setCreationPanelOpen] = useState(false);
+  const [agentRuns, setAgentRuns] = useState<ProjectAgentRun[]>(initialAgentRuns);
+  const [traceOpen, setTraceOpen] = useState(true);
+  const [selectedRunId, setSelectedRunId] = useState(initialAgentRuns.at(-1)?.id ?? '');
 
-  useEffect(() => () => timelineCleanupRef.current?.(), []);
+  useEffect(() => {
+    window.localStorage.setItem('picut:last-project', projectId);
+  }, [projectId]);
 
   const selectedIndex = Math.max(0, spec.editSpec.scenes.findIndex((scene) => scene.id === selectedSceneId));
   const selectedScene = spec.editSpec.scenes[selectedIndex];
   const storyScene = spec.storySpec.scenes.find((scene) => scene.id === selectedSceneId);
   const durationFrames = useMemo(() => spec.editSpec.scenes.reduce((max, scene) => Math.max(max, scene.startFrame + scene.durationFrames), 1), [spec]);
+  const narrationAsset = useMemo(() => spec.assets.find((asset) => asset.id === spec.editSpec.globalAudio.narrationAssetId), [spec]);
+  const selectedRun = useMemo(() => agentRuns.find((run) => run.id === selectedRunId) ?? agentRuns.at(-1), [agentRuns, selectedRunId]);
 
   const updateFromResponse = useCallback((data: {spec: VideoSpec; validation: ValidationReport}) => {
     setSpec(data.spec);
     setValidation(data.validation);
   }, []);
+
+  const seekTo = useCallback((frame: number) => {
+    const next = Math.max(0, Math.min(durationFrames - 1, Math.round(frame)));
+    setSeekFrame(next);
+    setPlayheadFrame(next);
+  }, [durationFrames]);
+
+  const selectScene = useCallback((sceneId: string) => {
+    setSelectedSceneId(sceneId);
+  }, []);
+
+  const togglePlayback = useCallback(() => {
+    setTransport((current) => ({id: current.id + 1, action: playing ? 'pause' : 'play'}));
+  }, [playing]);
+
+  const handlePlaybackChange = useCallback((value: boolean) => setPlaying(value), []);
+  const handleFrameChange = useCallback((frame: number) => setPlayheadFrame(frame), []);
 
   const submitPrompt = useCallback(async (event: FormEvent) => {
     event.preventDefault();
@@ -74,18 +153,108 @@ export function Studio({initialSpec, initialValidation, initialPendingApproval}:
     setBusy('agent');
     setNotice(null);
     try {
-      const response = await fetch('/api/agent/run', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({projectId: PROJECT_ID, prompt: instruction})});
+      const isNewProject = /(?:新建|创建|生成).*(?:视频|项目)/.test(instruction) && !/修改|改成|调整/.test(instruction);
+      if (isNewProject) {
+        setCreationBrief(instruction);
+        setCreationPanelOpen(true);
+        const response = await fetch('/api/projects', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({brief: instruction})});
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error ?? '新建项目失败');
+        router.push(data.url);
+        return;
+      }
+      const response = await fetch('/api/agent/run', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({projectId, prompt: instruction})});
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? 'Agent 请求失败');
       updateFromResponse(data);
       setPendingApproval(data.pendingApproval ?? null);
+      if (data.traceRun) {
+        setAgentRuns((current) => [...current, data.traceRun].slice(-40));
+        setSelectedRunId(data.traceRun.id);
+      }
       setMessages((current) => [...current, {id: crypto.randomUUID(), role: 'agent', text: data.response, meta: `${data.model} · ${data.executionMode}`}]);
     } catch (error) {
+      setCreationBrief(null);
+      setCreationPanelOpen(false);
       setNotice(error instanceof Error ? error.message : 'Agent 请求失败');
     } finally {
       setBusy(null);
     }
-  }, [busy, prompt, updateFromResponse]);
+  }, [busy, projectId, prompt, router, updateFromResponse]);
+
+  const createSession = useCallback(async (event: FormEvent) => {
+    event.preventDefault();
+    const brief = newSessionBrief.trim();
+    if (brief.length < 6 || busy) return;
+    setBusy('agent');
+    setCreationBrief(brief);
+    setCreationPanelOpen(true);
+    setSessionOpen(false);
+    setNotice(null);
+    try {
+      const response = await fetch('/api/projects', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({brief})});
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? '新建会话失败');
+      router.push(data.url);
+    } catch (error) {
+      setCreationBrief(null);
+      setCreationPanelOpen(false);
+      setNotice(error instanceof Error ? error.message : '新建会话失败');
+      setBusy(null);
+    }
+  }, [busy, newSessionBrief, router]);
+
+  const renameSession = useCallback(async (session: SessionSummary) => {
+    const title = window.prompt('输入新的会话名称', session.title)?.trim();
+    if (!title || title === session.title || busy) return;
+    setBusy('save');
+    try {
+      const response = await fetch(`/api/projects/${session.id}`, {method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({title})});
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? '重命名失败');
+      if (session.id === projectId) updateFromResponse(data);
+      router.refresh();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : '重命名失败');
+      setBusy(null);
+    }
+  }, [busy, projectId, router, updateFromResponse]);
+
+  const archiveSession = useCallback(async (session: SessionSummary) => {
+    if (busy || !window.confirm(`将「${session.title}」移入可恢复归档？`)) return;
+    setBusy('save');
+    try {
+      const response = await fetch(`/api/projects/${session.id}`, {method: 'DELETE'});
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? '归档失败');
+      const next = data.projects?.find((item: SessionSummary) => item.id !== session.id);
+      router.push(next ? `/?project=${encodeURIComponent(next.id)}` : '/');
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : '归档失败');
+      setBusy(null);
+    }
+  }, [busy, router]);
+
+  const synthesizeAudio = useCallback(async () => {
+    if (busy) return;
+    setBusy('audio');
+    setNotice(null);
+    try {
+      const response = await fetch(`/api/projects/${projectId}/audio/synthesize`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({model: ttsModel, voice: ttsVoice, speed: ttsSpeed}),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? '旁白合成失败');
+      updateFromResponse(data);
+      setMessages((current) => [...current, {id: crypto.randomUUID(), role: 'agent', text: `已使用 ${data.audio.config.model} 生成 ${data.audio.segments.length} 段旁白，按镜头时长对齐并混音到主音轨。`, meta: 'SiliconFlow TTS · waveform ready'}]);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : '旁白合成失败');
+    } finally {
+      setBusy(null);
+    }
+  }, [busy, projectId, ttsModel, ttsSpeed, ttsVoice, updateFromResponse]);
 
   const resolveApproval = useCallback(async (decision: 'approve' | 'reject') => {
     if (busy || !pendingApproval) return;
@@ -97,7 +266,7 @@ export function Studio({initialSpec, initialValidation, initialPendingApproval}:
       const response = await fetch('/api/agent/run', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({projectId: PROJECT_ID, prompt: instruction}),
+        body: JSON.stringify({projectId, prompt: instruction}),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? '审批处理失败');
@@ -109,14 +278,14 @@ export function Studio({initialSpec, initialValidation, initialPendingApproval}:
     } finally {
       setBusy(null);
     }
-  }, [busy, pendingApproval, updateFromResponse]);
+  }, [busy, pendingApproval, projectId, updateFromResponse]);
 
   const commitPatch = useCallback(async (intent: string, patch: Array<{op: 'replace' | 'add' | 'remove'; path: string; value?: unknown}>) => {
     if (busy) return;
     setBusy('save');
     setNotice(null);
     try {
-      const response = await fetch(`/api/projects/${PROJECT_ID}/changesets`, {
+      const response = await fetch(`/api/projects/${projectId}/changesets`, {
         method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({baseRevision: spec.revision, intent, risk: patch.length > 2 ? 'medium' : 'low', patch}),
       });
@@ -129,96 +298,158 @@ export function Studio({initialSpec, initialValidation, initialPendingApproval}:
     } finally {
       setBusy(null);
     }
-  }, [busy, spec.revision, updateFromResponse]);
+  }, [busy, projectId, spec.revision, updateFromResponse]);
+
+  const applyTheme = useCallback((theme: VideoThemeName) => {
+    const preset = VIDEO_THEME_PRESETS[theme];
+    const patch: PatchOperation[] = [
+      {op: 'replace', path: '/style/themeRef', value: `picut-${theme}`},
+      {op: 'replace', path: '/style/tokens', value: preset.tokens},
+      ...spec.editSpec.scenes.map((_, index): PatchOperation => ({op: 'replace', path: `/editSpec/scenes/${index}/props/accentColor`, value: preset.tokens.primary})),
+    ];
+    void commitPatch(`将全片色彩主题切换为 ${preset.label}`, patch);
+  }, [commitPatch, spec.editSpec.scenes]);
+
+  const narrationResetPatch = useCallback((): PatchOperation[] => {
+    if (!spec.editSpec.globalAudio.narrationAssetId && !spec.editSpec.globalAudio.narrationSegments.length) return [];
+    const narrationIds = new Set([
+      spec.editSpec.globalAudio.narrationAssetId,
+      ...spec.editSpec.globalAudio.narrationSegments.map((segment) => segment.assetId),
+    ].filter((id): id is string => Boolean(id)));
+    return [
+      {op: 'replace', path: '/assets', value: spec.assets.filter((asset) => !narrationIds.has(asset.id))},
+      {op: 'replace', path: '/editSpec/globalAudio/narrationAssetId', value: null},
+      {op: 'replace', path: '/editSpec/globalAudio/narrationSegments', value: []},
+    ];
+  }, [spec.assets, spec.editSpec.globalAudio.narrationAssetId, spec.editSpec.globalAudio.narrationSegments]);
 
   const updateDuration = useCallback((seconds: number) => {
-    const nextFrames = Math.max(spec.canvas.fps * 3, Math.round(seconds * spec.canvas.fps));
+    const nextFrames = Math.max(1, Math.round(Math.max(0.1, seconds) * spec.canvas.fps));
     const delta = nextFrames - selectedScene.durationFrames;
-    const patch: Array<{op: 'replace'; path: string; value: number}> = [
+    if (delta === 0) return;
+    const nextScenes = spec.editSpec.scenes.map((scene, index) => {
+      if (index === selectedIndex) return {...scene, durationFrames: nextFrames};
+      if (index > selectedIndex) return {...scene, startFrame: Math.max(0, scene.startFrame + delta)};
+      return scene;
+    });
+    const totalFrames = nextScenes.reduce((max, scene) => Math.max(max, scene.startFrame + scene.durationFrames), 1);
+    const totalMs = Math.max(1, Math.round(totalFrames / spec.canvas.fps * 1000));
+    const patch: PatchOperation[] = [
       {op: 'replace', path: `/editSpec/scenes/${selectedIndex}/durationFrames`, value: nextFrames},
     ];
     spec.editSpec.scenes.slice(selectedIndex + 1).forEach((scene, offset) => {
-      patch.push({op: 'replace', path: `/editSpec/scenes/${selectedIndex + offset + 1}/startFrame`, value: scene.startFrame + delta});
+      patch.push({op: 'replace', path: `/editSpec/scenes/${selectedIndex + offset + 1}/startFrame`, value: Math.max(0, scene.startFrame + delta)});
     });
+    patch.push(
+      {op: 'replace', path: '/project/targetDurationMs', value: totalMs},
+      {op: 'replace', path: '/constraints/maxDurationMs', value: Math.max(totalMs, spec.constraints.maxDurationMs)},
+      ...narrationResetPatch(),
+    );
     void commitPatch(`将 ${selectedScene.id} 时长调整为 ${seconds.toFixed(1)} 秒`, patch);
-  }, [commitPatch, selectedIndex, selectedScene, spec]);
+  }, [commitPatch, narrationResetPatch, selectedIndex, selectedScene, spec]);
 
-  const beginTimelineResize = useCallback((event: ReactPointerEvent<HTMLButtonElement>, edge: 'start' | 'end', sceneIndex: number) => {
+  const timelineMetaPatch = useCallback((scenes: VideoSpec['editSpec']['scenes']): PatchOperation[] => {
+    const frames = scenes.reduce((max, scene) => Math.max(max, scene.startFrame + scene.durationFrames), 1);
+    const durationMs = Math.round(frames / spec.canvas.fps * 1000);
+    return [
+      {op: 'replace', path: '/project/targetDurationMs', value: durationMs},
+      {op: 'replace', path: '/constraints/maxDurationMs', value: Math.max(durationMs, spec.constraints.maxDurationMs)},
+    ];
+  }, [spec.canvas.fps, spec.constraints.maxDurationMs]);
+
+  const uniqueSceneId = useCallback((base: string) => {
+    const existing = new Set(spec.editSpec.scenes.map((scene) => scene.id));
+    let index = 2;
+    let candidate = `${base}-${index}`;
+    while (existing.has(candidate)) candidate = `${base}-${++index}`;
+    return candidate;
+  }, [spec.editSpec.scenes]);
+
+  const splitSelected = useCallback(() => {
+    if (busy || spec.editSpec.scenes.length >= 12) return;
+    const scene = selectedScene;
+    const minFrames = Math.max(1, Math.round(spec.canvas.fps * 0.1));
+    const relative = playheadFrame - scene.startFrame;
+    const cut = relative >= minFrames && relative <= scene.durationFrames - minFrames
+      ? relative
+      : Math.round(scene.durationFrames / 2);
+    if (cut < minFrames || scene.durationFrames - cut < minFrames) {
+      setNotice('该镜头太短，无法在保留有效画面的同时分割。');
+      return;
+    }
+    const nextId = uniqueSceneId(scene.id);
+    const editScenes = spec.editSpec.scenes.flatMap((item) => item.id === scene.id ? [
+      {...item, durationFrames: cut},
+      {...item, id: nextId, startFrame: item.startFrame + cut, durationFrames: item.durationFrames - cut, sourceStartFrame: item.sourceStartFrame + cut, origin: {...item.origin, actor: 'human' as const, changeSetId: `ui-split-${Date.now()}`}},
+    ] : [item]);
+    const story = storyScene ?? spec.storySpec.scenes[selectedIndex];
+    const midpoint = Math.max(1, Math.min(story.narration.length - 1, Math.round(story.narration.length * cut / scene.durationFrames)));
+    const firstNarration = story.narration.slice(0, midpoint).trim() || story.narration;
+    const secondNarration = story.narration.slice(midpoint).trim() || story.narration;
+    const storyScenes = spec.storySpec.scenes.flatMap((item) => item.id === scene.id ? [
+      {...item, narration: firstNarration},
+      {...item, id: nextId, purpose: `${item.purpose}·后段`, narration: secondNarration, approvalState: 'draft' as const},
+    ] : [item]);
+    setSelectedSceneId(nextId);
+    seekTo(scene.startFrame + cut);
+    void commitPatch(`在 ${formatFrame(playheadFrame, spec.canvas.fps)} 分割 ${scene.id}`, [
+      {op: 'replace', path: '/storySpec/scenes', value: storyScenes},
+      {op: 'replace', path: '/editSpec/scenes', value: editScenes},
+      ...narrationResetPatch(),
+      ...timelineMetaPatch(editScenes),
+    ]);
+  }, [busy, commitPatch, narrationResetPatch, playheadFrame, seekTo, selectedIndex, selectedScene, spec, storyScene, timelineMetaPatch, uniqueSceneId]);
+
+  const duplicateSelected = useCallback(() => {
+    if (busy || spec.editSpec.scenes.length >= 12) return;
+    const scene = selectedScene;
+    const nextId = uniqueSceneId(scene.id);
+    const insertAt = scene.startFrame + scene.durationFrames;
+    const shifted = spec.editSpec.scenes.map((item) => item.startFrame >= insertAt ? {...item, startFrame: item.startFrame + scene.durationFrames} : item);
+    const sceneIndex = shifted.findIndex((item) => item.id === scene.id);
+    const duplicate = {...scene, id: nextId, startFrame: insertAt, origin: {...scene.origin, actor: 'human' as const, changeSetId: `ui-copy-${Date.now()}`}};
+    const editScenes = [...shifted.slice(0, sceneIndex + 1), duplicate, ...shifted.slice(sceneIndex + 1)];
+    const storyIndex = spec.storySpec.scenes.findIndex((item) => item.id === scene.id);
+    const sourceStory = spec.storySpec.scenes[storyIndex];
+    const storyScenes = [...spec.storySpec.scenes.slice(0, storyIndex + 1), {...sourceStory, id: nextId, purpose: `${sourceStory.purpose}·副本`, approvalState: 'draft' as const}, ...spec.storySpec.scenes.slice(storyIndex + 1)];
+    setSelectedSceneId(nextId);
+    seekTo(insertAt);
+    void commitPatch(`复制 ${scene.id} 并波纹后移后续镜头`, [
+      {op: 'replace', path: '/storySpec/scenes', value: storyScenes},
+      {op: 'replace', path: '/editSpec/scenes', value: editScenes},
+      ...narrationResetPatch(),
+      ...timelineMetaPatch(editScenes),
+    ]);
+  }, [busy, commitPatch, narrationResetPatch, seekTo, selectedScene, spec, timelineMetaPatch, uniqueSceneId]);
+
+  const deleteSelected = useCallback(() => {
     if (busy) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const lane = event.currentTarget.closest('.track-lane');
-    const laneWidth = lane?.getBoundingClientRect().width ?? 0;
-    if (laneWidth <= 0) return;
-
-    const snapshot = spec;
-    const startX = event.clientX;
-    const minFrames = snapshot.canvas.fps * 3;
-    const snapFrames = snapshot.canvas.fps / 2;
-    let finalScenes = snapshot.editSpec.scenes;
-    let lastDelta = 0;
-    timelineCleanupRef.current?.();
-    const listenerController = new AbortController();
-    setSelectedSceneId(snapshot.editSpec.scenes[sceneIndex].id);
-    document.body.classList.add('timeline-resizing');
-
-    const onMove = (pointerEvent: PointerEvent) => {
-      const rawFrames = (pointerEvent.clientX - startX) / laneWidth * durationFrames;
-      let delta = Math.round(rawFrames / snapFrames) * snapFrames;
-      const current = snapshot.editSpec.scenes[sceneIndex];
-
-      if (edge === 'start') {
-        const previous = snapshot.editSpec.scenes[sceneIndex - 1];
-        if (!previous) return;
-        delta = Math.max(minFrames - previous.durationFrames, Math.min(current.durationFrames - minFrames, delta));
-        finalScenes = snapshot.editSpec.scenes.map((scene, index) => {
-          if (index === sceneIndex - 1) return {...scene, durationFrames: previous.durationFrames + delta};
-          if (index === sceneIndex) return {...scene, startFrame: current.startFrame + delta, durationFrames: current.durationFrames - delta};
-          return scene;
-        });
-      } else {
-        delta = Math.max(minFrames - current.durationFrames, delta);
-        finalScenes = snapshot.editSpec.scenes.map((scene, index) => {
-          if (index === sceneIndex) return {...scene, durationFrames: current.durationFrames + delta};
-          if (index > sceneIndex) return {...scene, startFrame: scene.startFrame + delta};
-          return scene;
-        });
-      }
-
-      lastDelta = delta;
-      setSpec({...snapshot, editSpec: {...snapshot.editSpec, scenes: finalScenes}});
-    };
-
-    const cleanup = () => {
-      listenerController.abort();
-      document.body.classList.remove('timeline-resizing');
-      timelineCleanupRef.current = null;
-    };
-
-    const onUp = () => {
-      cleanup();
-      if (lastDelta === 0) return;
-      const patch: Array<{op: 'replace'; path: string; value: number}> = [];
-      finalScenes.forEach((scene, index) => {
-        const before = snapshot.editSpec.scenes[index];
-        if (scene.startFrame !== before.startFrame) patch.push({op: 'replace', path: `/editSpec/scenes/${index}/startFrame`, value: scene.startFrame});
-        if (scene.durationFrames !== before.durationFrames) patch.push({op: 'replace', path: `/editSpec/scenes/${index}/durationFrames`, value: scene.durationFrames});
-      });
-      const boundary = edge === 'start' ? '入点' : '出点';
-      void commitPatch(`在时间轴拖动 ${snapshot.editSpec.scenes[sceneIndex].id} ${boundary} ${Math.abs(lastDelta / snapshot.canvas.fps).toFixed(1)} 秒`, patch);
-    };
-
-    timelineCleanupRef.current = cleanup;
-    window.addEventListener('pointermove', onMove, {signal: listenerController.signal});
-    window.addEventListener('pointerup', onUp, {once: true, signal: listenerController.signal});
-    window.addEventListener('pointercancel', onUp, {once: true, signal: listenerController.signal});
-  }, [busy, commitPatch, durationFrames, spec]);
+    if (spec.editSpec.scenes.length <= 1) {
+      setNotice('项目至少需要保留一个镜头。');
+      return;
+    }
+    const scene = selectedScene;
+    const end = scene.startFrame + scene.durationFrames;
+    const editScenes = spec.editSpec.scenes
+      .filter((item) => item.id !== scene.id)
+      .map((item) => item.startFrame >= end ? {...item, startFrame: Math.max(0, item.startFrame - scene.durationFrames)} : item);
+    const storyScenes = spec.storySpec.scenes.filter((item) => item.id !== scene.id);
+    const nextSelected = editScenes[Math.min(selectedIndex, editScenes.length - 1)];
+    setSelectedSceneId(nextSelected.id);
+    seekTo(nextSelected.startFrame);
+    void commitPatch(`波纹删除 ${scene.id}`, [
+      {op: 'replace', path: '/storySpec/scenes', value: storyScenes},
+      {op: 'replace', path: '/editSpec/scenes', value: editScenes},
+      ...narrationResetPatch(),
+      ...timelineMetaPatch(editScenes),
+    ]);
+  }, [busy, commitPatch, narrationResetPatch, seekTo, selectedIndex, selectedScene, spec, timelineMetaPatch]);
 
   const undo = useCallback(async () => {
     if (busy) return;
     setBusy('undo');
     try {
-      const response = await fetch(`/api/projects/${PROJECT_ID}/undo`, {method: 'POST'});
+      const response = await fetch(`/api/projects/${projectId}/undo`, {method: 'POST'});
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? '撤销失败');
       updateFromResponse(data);
@@ -228,7 +459,7 @@ export function Studio({initialSpec, initialValidation, initialPendingApproval}:
     } finally {
       setBusy(null);
     }
-  }, [busy, updateFromResponse]);
+  }, [busy, projectId, updateFromResponse]);
 
   const render = useCallback(async () => {
     if (busy || !validation.valid) return;
@@ -236,28 +467,73 @@ export function Studio({initialSpec, initialValidation, initialPendingApproval}:
     setRenderResult(null);
     setNotice(null);
     try {
-      const response = await fetch(`/api/projects/${PROJECT_ID}/render`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({backend: renderBackend, mode: 'final'})});
+      const response = await fetch(`/api/projects/${projectId}/render`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({backend: renderBackend, mode: 'final'})});
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? '渲染失败');
       setRenderResult(data);
-      setMessages((current) => [...current, {id: crypto.randomUUID(), role: 'agent', text: `${renderBackend === 'remotion' ? 'Remotion' : 'HyperFrames'} 最终渲染完成，五件套交付物已生成。`, meta: 'G1–G7 · delivered'}]);
+      if (data.traceRun) {
+        setAgentRuns((current) => [...current, data.traceRun].slice(-40));
+        setSelectedRunId(data.traceRun.id);
+      }
+      const selected = data.routing?.selected ?? renderBackend;
+      const routeCopy = data.routing ? `自主路由选择 ${selected === 'remotion' ? 'Remotion' : 'HyperFrames'}（置信度 ${Math.round(data.routing.confidence * 100)}%）` : selected === 'remotion' ? 'Remotion' : 'HyperFrames';
+      setMessages((current) => [...current, {id: crypto.randomUUID(), role: 'agent', text: `${routeCopy}，最终渲染完成，五件套交付物已生成。`, meta: 'G1–G7 · delivered'}]);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : '渲染失败');
     } finally {
       setBusy(null);
     }
-  }, [busy, renderBackend, validation.valid]);
+  }, [busy, projectId, renderBackend, validation.valid]);
+
+  const addMotionKeyframes = useCallback(() => {
+    const relativeFrame = Math.max(0, Math.min(selectedScene.durationFrames, playheadFrame - selectedScene.startFrame));
+    const values = selectedScene.transform;
+    const properties = [
+      ['x', values.x],
+      ['y', values.y],
+      ['scale', values.scale],
+      ['rotation', values.rotation],
+      ['opacity', values.opacity],
+    ] as const;
+    const replaced = selectedScene.keyframes.filter((keyframe) => keyframe.frame !== relativeFrame || !properties.some(([property]) => property === keyframe.property));
+    const next = [...replaced, ...properties.map(([property, value]) => ({frame: relativeFrame, property, value, easing: 'ease-in-out' as const}))]
+      .sort((a, b) => a.frame - b.frame || a.property.localeCompare(b.property));
+    void commitPatch(`在 ${selectedScene.id} 的 ${formatFrame(playheadFrame, spec.canvas.fps)} 添加运动关键帧`, [{op: 'replace', path: `/editSpec/scenes/${selectedIndex}/keyframes`, value: next}]);
+  }, [commitPatch, playheadFrame, selectedIndex, selectedScene, spec.canvas.fps]);
 
   if (!selectedScene) return null;
+  const qualityWarningCount = validation.gates.filter((gate) => gate.status === 'warn').length;
+  const qualityFailureCount = validation.gates.filter((gate) => gate.status === 'fail').length;
   return (
     <main className="studio-shell">
       <header className="topbar">
         <div className="brand-lockup"><div className="brand-mark">π</div><div><strong>πCut</strong><span>Agentic Video Compiler</span></div></div>
-        <div className="project-breadcrumb"><span>Projects</span><b>/</b><strong>{spec.project.title}</strong><span className="revision-chip">r{spec.revision}</span></div>
+        <div className="project-switcher">
+          <button className="project-breadcrumb" type="button" onClick={() => setSessionOpen((value) => !value)} aria-expanded={sessionOpen} aria-haspopup="dialog">
+            <Folders size={15}/><span>Sessions</span><b>/</b><strong>{spec.project.title}</strong><span className="revision-chip">r{spec.revision}</span><ChevronDown size={14}/>
+          </button>
+          {sessionOpen && <div className="session-popover" role="dialog" aria-label="项目会话管理">
+            <div className="session-popover-head"><div><strong>项目会话</strong><span>视频、时间轴和对话均持久化</span></div><span>{sessions.length}</span></div>
+            <div className="session-list">
+              {sessions.map((session) => <div className={`session-item ${session.id === projectId ? 'active' : ''}`} key={session.id}>
+                <button type="button" onClick={() => router.push(`/?project=${encodeURIComponent(session.id)}`)}>
+                  <span className="session-thumb"><MonitorPlay size={15}/></span>
+                  <span><strong>{session.title}</strong><small>{(session.durationMs / 1000).toFixed(0)}s · r{session.revision}{session.hasNarration ? ' · 已配音' : ''}</small></span>
+                </button>
+                <button className="session-action" type="button" onClick={() => void renameSession(session)} aria-label={`重命名 ${session.title}`}><Pencil size={12}/></button>
+                <button className="session-action danger" type="button" onClick={() => void archiveSession(session)} aria-label={`归档 ${session.title}`}><Archive size={12}/></button>
+              </div>)}
+            </div>
+            <form className="session-new" onSubmit={createSession}>
+              <label htmlFor="new-session-brief">新建视频会话</label>
+              <div><input id="new-session-brief" value={newSessionBrief} onChange={(event) => setNewSessionBrief(event.target.value)} placeholder="例如：12 秒云朵科普视频"/><button type="submit" disabled={newSessionBrief.trim().length < 6 || Boolean(busy)}><Plus size={14}/>创建</button></div>
+            </form>
+          </div>}
+        </div>
         <div className="top-actions">
           <button className="icon-button" type="button" onClick={undo} disabled={Boolean(busy)} aria-label="撤销上一项修改"><RotateCcw size={17} /></button>
           <div className={`quality-pill ${validation.valid ? 'pass' : 'fail'}`}><span /> {validation.valid ? 'G1–G7 Ready' : 'Quality blocked'}</div>
-          <label className="backend-select">Engine<select value={renderBackend} onChange={(event) => setRenderBackend(event.target.value as typeof renderBackend)}><option value="remotion">Remotion</option><option value="hyperframes">HyperFrames</option></select><ChevronDown size={14} /></label>
+          <label className="backend-select">Engine<select value={renderBackend} onChange={(event) => setRenderBackend(event.target.value as typeof renderBackend)}><option value="auto">自主路由</option><option value="remotion">Remotion</option><option value="hyperframes">HyperFrames</option></select><ChevronDown size={14} /></label>
           <button className="export-button" type="button" onClick={render} disabled={Boolean(busy) || !validation.valid}>{busy === 'render' ? <LoaderCircle className="spin" size={17} /> : <Download size={17} />} Export MP4</button>
         </div>
       </header>
@@ -268,6 +544,21 @@ export function Studio({initialSpec, initialValidation, initialPendingApproval}:
         <aside className="chat-panel panel">
           <div className="panel-heading"><div><MessageSquareText size={17}/><strong>Director</strong></div><span className="live-dot">Live</span></div>
           <div className="chat-context"><Sparkles size={15}/><div><strong>π Agent / ReAct</strong><span>Observe → Tool → Validate</span></div></div>
+          <section className={`agent-trace ${traceOpen ? 'open' : ''}`}>
+            <button className="agent-trace-head" type="button" onClick={() => setTraceOpen((current) => !current)} aria-expanded={traceOpen}>
+              <span><Workflow size={14}/><strong>Agent 轨迹</strong></span>
+              <small>{agentRuns.length ? `${agentRuns.length} runs` : '等待首次运行'}</small>
+              <ChevronDown size={13}/>
+            </button>
+            {traceOpen && <div className="agent-trace-body">
+              {agentRuns.length ? <>
+                {agentRuns.length > 1 && <select className="trace-run-select" aria-label="选择 Agent 运行记录" value={selectedRun?.id} onChange={(event) => setSelectedRunId(event.target.value)}>{agentRuns.map((run, index) => <option value={run.id} key={run.id}>{String(index + 1).padStart(2, '0')} · {run.prompt.slice(0, 28)}</option>)}</select>}
+                <div className="trace-run-meta"><strong>{selectedRun?.model}</strong><span>{selectedRun?.executionMode}</span></div>
+                <p className="trace-prompt">{selectedRun?.prompt}</p>
+                <ol>{selectedRun?.events.filter((event) => !['message_start', 'message_end', 'message_update'].includes(event.type)).slice(-14).map((event, index) => <li className={event.status ?? 'info'} key={`${event.at}-${event.type}-${index}`}><i/><div><strong>{event.summary}</strong>{event.detail && <span>{event.detail}</span>}</div><time>{new Date(event.at).toLocaleTimeString('zh-CN', {hour: '2-digit', minute: '2-digit', second: '2-digit'})}</time></li>)}</ol>
+              </> : <p className="trace-empty">新建视频或运行指令后，这里会显示观察、工具、质量门与引擎路由。</p>}
+            </div>}
+          </section>
           <div className="message-list" aria-live="polite">
             {messages.map((message) => <article className={`message ${message.role}`} key={message.id}><div className="avatar">{message.role === 'agent' ? <Bot size={17}/> : '你'}</div><div><span className="message-meta">{message.meta}</span><p>{message.text}</p></div></article>)}
             {busy === 'agent' && <article className="message agent"><div className="avatar"><Bot size={17}/></div><div><span className="message-meta">π Agent · ReAct loop</span><p className="thinking"><i/><i/><i/>正在观察并调用工具</p></div></article>}
@@ -277,33 +568,89 @@ export function Studio({initialSpec, initialValidation, initialPendingApproval}:
             <textarea aria-label="给剪辑 Agent 的指令" value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="例如：把第 3 幕改成蓝色，并延长到 12 秒" rows={3}/>
             <div><span>⌘ ↵ 运行</span><button type="submit" disabled={!prompt.trim() || Boolean(busy)} aria-label="发送指令"><Send size={16}/></button></div>
           </form>
-          <div className="suggestions"><button type="button" onClick={() => setPrompt('把第 3 幕的图表改成蓝色，并延长到 12 秒')}>改第 3 幕</button><button type="button" onClick={() => setPrompt('检查全部质量门并告诉我风险')}>检查质量</button></div>
+          <div className="suggestions"><button type="button" onClick={() => setPrompt('把第 3 幕的图表改成蓝色，并延长到 12 秒')}>改第 3 幕</button><button type="button" onClick={() => void synthesizeAudio()}>生成旁白</button><button type="button" onClick={() => setPrompt('检查全部质量门并告诉我风险')}>检查质量</button></div>
         </aside>
 
         <section className="canvas-column">
           <div className="canvas-toolbar panel"><div className="toolbar-tabs"><button className="active" type="button"><MonitorPlay size={15}/> Program</button><button type="button"><MousePointer2 size={15}/> Preview</button></div><div className="canvas-meta"><span>1920 × 1080</span><span>{spec.canvas.fps} fps</span><span>{(durationFrames / spec.canvas.fps).toFixed(1)} s</span></div></div>
-          <div className="canvas-stage panel"><div className="player-wrap"><RemotionPreview spec={spec} focusFrame={selectedScene.startFrame + Math.min(30, Math.floor(selectedScene.durationFrames / 4))}/></div><div className="stage-caption"><div><span className="scene-number">{String(selectedIndex + 1).padStart(2, '0')}</span><div><strong>{storyScene?.purpose}</strong><span>{selectedScene.component} · {selectedScene.durationFrames} frames</span></div></div><button type="button" onClick={() => setPrompt(`修改 ${selectedScene.id}：`)}><WandSparkles size={15}/> Ask Agent</button></div></div>
-          <div className="timeline-panel panel">
-            <div className="timeline-header"><div><strong>Timeline</strong><span>{spec.editSpec.scenes.length} scenes · frame-accurate</span></div><div className="timeline-legend"><span><i className="agent-color"/>Agent</span><span><i className="human-color"/>Shared</span><button type="button" aria-label="播放时间轴"><Play size={14}/></button></div></div>
-            <div className="ruler">{Array.from({length: 7}, (_, index) => <span key={index} style={{left: `${index / 6 * 100}%`}}>{Math.round(index * durationFrames / spec.canvas.fps / 6)}s</span>)}</div>
-            <div className="track-row"><div className="track-label"><MonitorPlay size={14}/><span>VIDEO</span></div><div className="track-lane">{spec.editSpec.scenes.map((scene, index) => <div key={scene.id} className={`timeline-clip ${scene.id === selectedSceneId ? 'selected' : ''}`} style={{left: `${scene.startFrame / durationFrames * 100}%`, width: `${scene.durationFrames / durationFrames * 100}%`}}>{index > 0 && <button className="resize-handle start" type="button" aria-label={`拖动 ${scene.id} 入点`} onPointerDown={(event) => beginTimelineResize(event, 'start', index)}/>}<button className="clip-body" type="button" onClick={() => setSelectedSceneId(scene.id)} title={`${scene.id} · 拖动两侧手柄调整边界`}><span>{index + 1}</span><strong>{scene.component}</strong><small>{(scene.durationFrames / spec.canvas.fps).toFixed(1)}s</small></button><button className="resize-handle end" type="button" aria-label={`拖动 ${scene.id} 出点`} onPointerDown={(event) => beginTimelineResize(event, 'end', index)}/></div>)}</div></div>
-            <div className="track-row narration"><div className="track-label"><Gauge size={14}/><span>VOICE</span></div><div className="track-lane"><div className="waveform">{Array.from({length: 100}, (_, index) => <i key={index} style={{height: `${18 + ((index * 17) % 30)}%`}} />)}</div></div></div>
-          </div>
+          <div className="canvas-stage panel"><div className="player-wrap"><PreviewErrorBoundary><RemotionPreview spec={spec} focusFrame={seekFrame} transport={transport} onFrameChange={handleFrameChange} onPlaybackChange={handlePlaybackChange}/></PreviewErrorBoundary></div><div className="stage-caption"><div><span className="scene-number">{String(selectedIndex + 1).padStart(2, '0')}</span><div><strong>{storyScene?.purpose}</strong><span>{selectedScene.component} · {selectedScene.durationFrames} frames</span></div></div><button type="button" onClick={() => setPrompt(`修改 ${selectedScene.id}：`)}><WandSparkles size={15}/> Ask Agent</button></div></div>
+          <TimelineEditor
+            spec={spec}
+            selectedSceneId={selectedSceneId}
+            playheadFrame={playheadFrame}
+            playing={playing}
+            disabled={Boolean(busy)}
+            onSelect={selectScene}
+            onSeek={seekTo}
+            onTogglePlayback={togglePlayback}
+            onPatch={(intent, patch) => void commitPatch(intent, patch)}
+            onSplit={splitSelected}
+            onDuplicate={duplicateSelected}
+            onDelete={deleteSelected}
+            onUndo={() => void undo()}
+          />
         </section>
 
         <aside className="inspector panel">
           <div className="panel-heading"><div><PanelRight size={17}/><strong>Inspector</strong></div><span>{selectedScene.id}</span></div>
-          <div className="inspector-tabs"><button className="active" type="button">Scene</button><button type="button">Style</button><button type="button">Motion</button></div>
-          <section className="property-section"><label>Component</label><div className="readonly-field"><span className="component-icon"><WandSparkles size={15}/></span><strong>{selectedScene.component}</strong><Lock size={13}/></div></section>
-          <section className="property-section"><label>Accent color</label><div className="color-field"><input aria-label={`${selectedScene.id} 强调色`} type="color" value={String(selectedScene.props.accentColor ?? spec.style.tokens.primary)} onChange={(event) => void commitPatch(`修改 ${selectedScene.id} 强调色`, [{op: 'replace', path: `/editSpec/scenes/${selectedIndex}/props/accentColor`, value: event.target.value}])}/><code>{String(selectedScene.props.accentColor ?? spec.style.tokens.primary)}</code></div></section>
-          <section className="property-section"><div className="label-row"><label>Duration</label><span>{(selectedScene.durationFrames / spec.canvas.fps).toFixed(1)} s</span></div><input aria-label={`${selectedScene.id} 时长`} className="range-input" type="range" min="3" max="20" step="0.5" value={selectedScene.durationFrames / spec.canvas.fps} onChange={(event) => updateDuration(Number(event.target.value))}/><div className="range-labels"><span>3s</span><span>20s</span></div></section>
-          <section className="property-section"><label>Narration</label><textarea aria-label={`${selectedScene.id} 旁白`} rows={5} value={storyScene?.narration ?? ''} onChange={(event) => {const value = event.target.value; setSpec((current) => ({...current, storySpec: {...current.storySpec, scenes: current.storySpec.scenes.map((scene) => scene.id === selectedSceneId ? {...scene, narration: value} : scene)}}));}} onBlur={(event) => void commitPatch(`修改 ${selectedScene.id} 旁白`, [{op: 'replace', path: `/storySpec/scenes/${selectedIndex}/narration`, value: event.target.value}])}/></section>
-          <section className="property-section"><div className="label-row"><label>Ownership</label>{selectedScene.locks.locked ? <Lock size={14}/> : <Unlock size={14}/>}</div><button className="ownership-button" type="button" onClick={() => void commitPatch(`${selectedScene.locks.locked ? '解锁' : '锁定'} ${selectedScene.id}`, [{op: 'replace', path: `/editSpec/scenes/${selectedIndex}/locks/locked`, value: !selectedScene.locks.locked}])}><span>{selectedScene.locks.owner === 'human' ? 'Human' : 'Human + Agent'}</span><strong>{selectedScene.locks.locked ? 'Locked' : 'Shared'}</strong></button></section>
-          <section className="gate-section"><div className="label-row"><label>Quality gates</label><span>{validation.gates.filter((item) => item.status === 'pass').length}/{validation.gates.length}</span></div>{validation.gates.map((gate) => <div className={`gate-row ${gate.status}`} key={gate.id}>{gate.status === 'pass' ? <Check size={13}/> : <CircleAlert size={13}/>}<strong>{gate.id}</strong><span>{gate.name}</span></div>)}</section>
+          <div className="inspector-tabs"><button className={inspectorTab === 'scene' ? 'active' : ''} type="button" onClick={() => setInspectorTab('scene')}>Scene</button><button className={inspectorTab === 'style' ? 'active' : ''} type="button" onClick={() => setInspectorTab('style')}>Style</button><button className={inspectorTab === 'motion' ? 'active' : ''} type="button" onClick={() => setInspectorTab('motion')}>Motion</button></div>
+          {inspectorTab === 'scene' && <>
+            <section className="property-section"><label>Component</label><div className="readonly-field"><span className="component-icon"><WandSparkles size={15}/></span><strong>{selectedScene.component}</strong><Lock size={13}/></div></section>
+            <DurationControl key={`${selectedScene.id}-${spec.revision}`} sceneId={selectedScene.id} seconds={selectedScene.durationFrames / spec.canvas.fps} onCommit={updateDuration}/>
+            <section className="property-section"><label>Narration</label><textarea aria-label={`${selectedScene.id} 旁白`} rows={5} value={storyScene?.narration ?? ''} onChange={(event) => {const value = event.target.value; setSpec((current) => ({...current, storySpec: {...current.storySpec, scenes: current.storySpec.scenes.map((scene) => scene.id === selectedSceneId ? {...scene, narration: value} : scene)}}));}} onBlur={(event) => void commitPatch(`修改 ${selectedScene.id} 旁白`, [{op: 'replace', path: `/storySpec/scenes/${selectedIndex}/narration`, value: event.target.value}])}/></section>
+            <section className="property-section audio-studio"><div className="label-row"><label>AI Voice</label><Volume2 size={14}/></div><select aria-label="旁白模型" value={ttsModel} onChange={(event) => setTtsModel(event.target.value)}><option value="fnlp/MOSS-TTSD-v0.5">MOSS-TTSD · 高表现力 / 长文本</option><option value="FunAudioLLM/CosyVoice2-0.5B">CosyVoice 2 · 快速 / 多音色</option></select><select aria-label="旁白音色" value={ttsVoice} onChange={(event) => setTtsVoice(event.target.value)}><option value="FunAudioLLM/CosyVoice2-0.5B:claire">Claire · 清晰女声</option><option value="FunAudioLLM/CosyVoice2-0.5B:anna">Anna · 温和女声</option><option value="FunAudioLLM/CosyVoice2-0.5B:charles">Charles · 叙事男声</option><option value="FunAudioLLM/CosyVoice2-0.5B:benjamin">Benjamin · 稳重男声</option></select><div className="voice-speed"><span>语速 {ttsSpeed.toFixed(2)}×</span><input aria-label="旁白语速" type="range" min="0.7" max="1.5" step="0.02" value={ttsSpeed} onChange={(event) => setTtsSpeed(Number(event.target.value))}/></div><button className="synthesize-button" type="button" disabled={Boolean(busy)} onClick={() => void synthesizeAudio()}>{busy === 'audio' ? <LoaderCircle className="spin" size={14}/> : <Volume2 size={14}/>} {narrationAsset ? '重新合成全部旁白' : '合成全部旁白'}</button>{narrationAsset && <audio controls preload="metadata" src={narrationAsset.src}/>}<small>{ttsModel === 'fnlp/MOSS-TTSD-v0.5' ? '高表现力模型使用所选参考音色，更适合中文科普和较长旁白。' : '快速模型支持更多预置音色；合成后仍会做自然留白与短淡出。'}</small></section>
+            <section className="property-section"><div className="label-row"><label>Ownership</label>{selectedScene.locks.locked ? <Lock size={14}/> : <Unlock size={14}/>}</div><button className="ownership-button" type="button" onClick={() => void commitPatch(`${selectedScene.locks.locked ? '解锁' : '锁定'} ${selectedScene.id}`, [{op: 'replace', path: `/editSpec/scenes/${selectedIndex}/locks/locked`, value: !selectedScene.locks.locked}])}><span>{selectedScene.locks.owner === 'human' ? 'Human' : 'Human + Agent'}</span><strong>{selectedScene.locks.locked ? 'Locked' : 'Shared'}</strong></button></section>
+          </>}
+          {inspectorTab === 'style' && <>
+            <section className="property-section"><div className="label-row"><label>Global color theme</label><span>全片联动</span></div><div className="theme-presets">{Object.entries(VIDEO_THEME_PRESETS).map(([key, preset]) => <button className={spec.style.themeRef.endsWith(key) ? 'active' : ''} type="button" key={key} onClick={() => applyTheme(key as VideoThemeName)} disabled={Boolean(busy)}><i style={{background: `linear-gradient(135deg,${preset.tokens.background} 0 48%,${preset.tokens.primary} 49% 72%,${preset.tokens.accent} 73%)`}}/><span>{preset.label}</span></button>)}</div><small className="theme-help">同步背景、卡片表面、主色、辅助色、文字色以及全部镜头强调色。</small></section>
+            <section className="property-section"><label>Accent color</label><div className="color-field"><input aria-label={`${selectedScene.id} 强调色`} type="color" value={String(selectedScene.props.accentColor ?? spec.style.tokens.primary)} onChange={(event) => void commitPatch(`修改 ${selectedScene.id} 强调色`, [{op: 'replace', path: `/editSpec/scenes/${selectedIndex}/props/accentColor`, value: event.target.value}])}/><code>{String(selectedScene.props.accentColor ?? spec.style.tokens.primary)}</code></div></section>
+            <section className="property-section"><div className="label-row"><label>Opacity</label><span>{Math.round(selectedScene.transform.opacity * 100)}%</span></div><input key={`${selectedScene.id}-${spec.revision}-opacity`} className="range-input" type="range" min="0" max="1" step="0.05" defaultValue={selectedScene.transform.opacity} onPointerUp={(event) => void commitPatch(`修改 ${selectedScene.id} 透明度`, [{op: 'replace', path: `/editSpec/scenes/${selectedIndex}/transform/opacity`, value: Number(event.currentTarget.value)}])}/></section>
+            <section className="property-section"><div className="label-row"><label>Effect stack</label><span>{selectedScene.effects.length}</span></div><div className="effect-stack">{selectedScene.effects.map((effect, effectIndex) => <div className="effect-row" key={effect.id}><button className={effect.enabled ? 'enabled' : ''} type="button" onClick={() => void commitPatch(`${effect.enabled ? '关闭' : '启用'} ${effect.type}`, [{op: 'replace', path: `/editSpec/scenes/${selectedIndex}/effects/${effectIndex}/enabled`, value: !effect.enabled}])}>{effect.enabled ? '●' : '○'}</button><select value={effect.type} onChange={(event) => void commitPatch(`修改效果类型`, [{op: 'replace', path: `/editSpec/scenes/${selectedIndex}/effects/${effectIndex}/type`, value: event.target.value}])}><option value="blur">Blur</option><option value="brightness">Brightness</option><option value="contrast">Contrast</option><option value="saturate">Saturate</option><option value="hue-rotate">Hue rotate</option><option value="drop-shadow">Shadow</option></select><input type="number" step="0.1" defaultValue={effect.amount} onBlur={(event) => void commitPatch(`修改 ${effect.type} 强度`, [{op: 'replace', path: `/editSpec/scenes/${selectedIndex}/effects/${effectIndex}/amount`, value: Number(event.target.value)}])}/><button type="button" aria-label={`删除 ${effect.type}`} onClick={() => void commitPatch(`删除 ${effect.type} 效果`, [{op: 'remove', path: `/editSpec/scenes/${selectedIndex}/effects/${effectIndex}`}])}>×</button></div>)}</div><div className="effect-add"><button type="button" onClick={() => void commitPatch(`为 ${selectedScene.id} 添加柔焦`, [{op: 'add', path: `/editSpec/scenes/${selectedIndex}/effects/-`, value: {id: `fx-${Date.now().toString(36)}`, type: 'blur', enabled: true, amount: 6}}])}>+ Blur</button><button type="button" onClick={() => void commitPatch(`为 ${selectedScene.id} 添加饱和度`, [{op: 'add', path: `/editSpec/scenes/${selectedIndex}/effects/-`, value: {id: `fx-${Date.now().toString(36)}`, type: 'saturate', enabled: true, amount: 1.25}}])}>+ Saturate</button></div></section>
+          </>}
+          {inspectorTab === 'motion' && <>
+            <section className="property-section"><label>Transform</label><div className="motion-grid">{([
+              ['X', 'x', selectedScene.transform.x, 1], ['Y', 'y', selectedScene.transform.y, 1], ['Scale', 'scale', selectedScene.transform.scale, 0.05], ['Rotate', 'rotation', selectedScene.transform.rotation, 1],
+            ] as const).map(([label, field, value, step]) => <label key={field}><span>{label}</span><input key={`${selectedScene.id}-${spec.revision}-${field}`} type="number" step={step} defaultValue={value} onBlur={(event) => void commitPatch(`修改 ${selectedScene.id} ${label}`, [{op: 'replace', path: `/editSpec/scenes/${selectedIndex}/transform/${field}`, value: Number(event.target.value)}])}/></label>)}</div></section>
+            <section className="property-section"><label>Playback rate</label><input key={`${selectedScene.id}-${spec.revision}-rate`} className="wide-number" type="number" min="0.25" max="4" step="0.05" defaultValue={selectedScene.playbackRate} onBlur={(event) => void commitPatch(`修改 ${selectedScene.id} 播放速率`, [{op: 'replace', path: `/editSpec/scenes/${selectedIndex}/playbackRate`, value: Number(event.target.value)}])}/></section>
+            <section className="property-section"><label>Transitions</label><div className="transition-grid"><label><span>In</span><select value={selectedScene.transition.in} onChange={(event) => void commitPatch(`修改 ${selectedScene.id} 入场转场`, [{op: 'replace', path: `/editSpec/scenes/${selectedIndex}/transition/in`, value: event.target.value}])}><option value="none">None</option><option value="fade">Fade</option><option value="wipe">Wipe</option><option value="slide">Slide</option></select></label><label><span>Out</span><select value={selectedScene.transition.out} onChange={(event) => void commitPatch(`修改 ${selectedScene.id} 出场转场`, [{op: 'replace', path: `/editSpec/scenes/${selectedIndex}/transition/out`, value: event.target.value}])}><option value="none">None</option><option value="fade">Fade</option><option value="wipe">Wipe</option><option value="slide">Slide</option></select></label><label><span>Frames</span><input type="number" min="0" max="90" defaultValue={selectedScene.transition.durationFrames} onBlur={(event) => void commitPatch(`修改 ${selectedScene.id} 转场时长`, [{op: 'replace', path: `/editSpec/scenes/${selectedIndex}/transition/durationFrames`, value: Number(event.target.value)}])}/></label></div></section>
+            <section className="property-section"><div className="label-row"><label>Keyframes</label><span>{selectedScene.keyframes.length}</span></div><button className="keyframe-button" type="button" onClick={addMotionKeyframes}><Plus size={13}/>在当前播放头添加 5 个关键帧</button><div className="keyframe-list">{selectedScene.keyframes.slice(-12).map((keyframe, index) => <span key={`${keyframe.frame}-${keyframe.property}-${index}`}><b>{keyframe.frame}f</b>{keyframe.property}<code>{keyframe.value}</code></span>)}</div></section>
+          </>}
+          <section className="gate-section"><div className="label-row"><label>Quality gates</label><span>{validation.valid ? qualityWarningCount ? `Ready · ${qualityWarningCount} 提醒` : 'Ready · 7/7' : `Blocked · ${qualityFailureCount}`}</span></div>{validation.gates.map((gate) => <div className={`gate-row ${gate.status}`} key={gate.id}>{gate.status === 'pass' ? <Check size={13}/> : <CircleAlert size={13}/>}<strong>{gate.id}</strong><span>{gate.name}</span></div>)}</section>
           {busy === 'save' && <div className="saving"><LoaderCircle className="spin" size={14}/> 正在生成 ChangeSet…</div>}
         </aside>
       </div>
       {renderResult && <div className="render-toast"><Check size={18}/><div><strong>交付包渲染完成</strong><span>MP4、字幕与清单均已生成</span></div><a href={renderResult.urls.video} download>下载 MP4</a><a href={renderResult.urls.manifest} target="_blank" rel="noreferrer">查看清单</a></div>}
+      {creationBrief && creationPanelOpen && <div className="creation-overlay" role="dialog" aria-label="新视频生成进度" onMouseDown={(event) => {if (event.target === event.currentTarget) setCreationPanelOpen(false);}}>
+        <section className="creation-card" aria-live="polite">
+          <div className="creation-orbit"><span/><span/><span/><Bot size={28}/></div>
+          <p className="creation-kicker">π AGENT · NEW SESSION</p>
+          <h2>正在从空白需求生成新视频</h2>
+          <p className="creation-brief">“{creationBrief}”</p>
+          <div className="creation-pipeline">
+            <span className="active"><i/>原生规划 StorySpec</span>
+            <span><i/>组装多轨 VideoSpec</span>
+            <span><i/>选择 Remotion / HyperFrames</span>
+            <span><i/>校验并持久化独立会话</span>
+          </div>
+          <small>任务会在后台继续。你可以收起面板，留在当前工作台查看或播放现有视频。</small>
+          <button className="creation-minimize" type="button" onClick={() => setCreationPanelOpen(false)}>收起到后台</button>
+        </section>
+      </div>}
+      {creationBrief && !creationPanelOpen && <button className="creation-dock" type="button" onClick={() => setCreationPanelOpen(true)} aria-label="查看新视频生成进度">
+        <LoaderCircle className="spin" size={17}/><span><strong>π Agent 正在后台生成新视频</strong><small>{creationBrief}</small></span><b>查看进度</b>
+      </button>}
     </main>
   );
+}
+
+function formatFrame(frame: number, fps: number) {
+  const seconds = Math.max(0, frame / fps);
+  const minutes = Math.floor(seconds / 60);
+  return `${String(minutes).padStart(2, '0')}:${(seconds - minutes * 60).toFixed(2).padStart(5, '0')}`;
+}
+
+function DurationControl({sceneId, seconds, onCommit}: {sceneId: string; seconds: number; onCommit: (seconds: number) => void}) {
+  const [draft, setDraft] = useState(seconds);
+  const maximum = Math.max(20, Math.ceil(seconds));
+  return <section className="property-section"><div className="label-row"><label>Duration</label><span>{draft.toFixed(1)} s</span></div><input aria-label={`${sceneId} 时长`} className="range-input" type="range" min="0.1" max={maximum} step="0.1" value={Math.max(0.1, draft)} onChange={(event) => setDraft(Number(event.target.value))} onPointerUp={() => onCommit(Math.max(0.1, draft))} onBlur={() => onCommit(Math.max(0.1, draft))}/><div className="range-labels"><span>0.1s</span><span>{maximum}s</span></div></section>;
 }

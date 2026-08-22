@@ -19,6 +19,7 @@ const lineStyle: CSSProperties = {
 
 export function SceneShell({
   children,
+  props,
   spec,
   sceneIndex,
   durationInFrames,
@@ -26,15 +27,15 @@ export function SceneShell({
 }: SceneComponentProps & {children: ReactNode; accent?: string}) {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
-  const enter = interpolate(frame, [0, Math.min(18, durationInFrames / 4)], [0, 1], {extrapolateRight: 'clamp'});
-  const exit = interpolate(frame, [durationInFrames - Math.min(12, durationInFrames / 4), durationInFrames], [1, 0], {extrapolateLeft: 'clamp'});
+  const enter = props.transitionIn && props.transitionIn !== 'fade' ? 1 : interpolate(frame, [0, Math.min(18, durationInFrames / 4)], [0, 1], {extrapolateRight: 'clamp'});
+  const exit = props.transitionOut && props.transitionOut !== 'fade' ? 1 : interpolate(frame, [durationInFrames - Math.min(12, durationInFrames / 4), durationInFrames], [1, 0], {extrapolateLeft: 'clamp'});
   const pulse = 0.3 + Math.sin(frame / fps * Math.PI) * 0.08;
   const tokens = spec.style.tokens;
   const activeAccent = accent ?? tokens.primary;
   return (
     <AbsoluteFill
       style={{
-        backgroundColor: tokens.background,
+        backgroundColor: props.transparentBackground ? 'transparent' : tokens.background,
         color: tokens.text,
         fontFamily: tokens.fontFamily,
         opacity: Math.min(enter, exit),
@@ -77,3 +78,4 @@ export const asString = (value: unknown, fallback = '') => typeof value === 'str
 export const asNumber = (value: unknown, fallback = 0) => typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 export const asStrings = (value: unknown) => Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 export const asNumbers = (value: unknown) => Array.isArray(value) ? value.filter((item): item is number => typeof item === 'number' && Number.isFinite(item)) : [];
+export const withAlpha = (color: string, alpha: string) => /^#[0-9a-fA-F]{6}$/.test(color) ? `${color}${alpha}` : color;

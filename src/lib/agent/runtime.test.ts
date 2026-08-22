@@ -2,12 +2,14 @@ import {describe, expect, it} from 'vitest';
 import {PICUT_AGENT_TOOL_NAMES, runPiCutAgent} from './runtime';
 
 describe('π Agent ReAct runtime', () => {
-  it('registers the complete six-tool video workflow contract', () => {
+  it('registers the complete eight-tool video workflow contract', () => {
     expect(PICUT_AGENT_TOOL_NAMES).toEqual([
       'create_project',
       'draft_storyboard',
       'apply_spec_patch',
       'validate_spec',
+      'search_media',
+      'synthesize_narration',
       'render_preview',
       'render_final',
     ]);

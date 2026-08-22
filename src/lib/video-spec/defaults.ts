@@ -132,16 +132,33 @@ function scene(
 ): EditScene {
   return {
     id,
+    trackId: 'video-main',
     startFrame,
     durationFrames,
+    sourceStartFrame: 0,
+    playbackRate: 1,
     backend: 'either',
     component,
     props,
     animation: {preset: 'rise', enterFrames: 18, exitFrames: 12},
     layout: {safeAreaPct: 6, align: 'left'},
+    transform: {x: 0, y: 0, scale: 1, rotation: 0, opacity: 1},
+    transition: {in: 'fade', out: 'fade', durationFrames: 12},
+    keyframes: [],
+    effects: [],
     locks: {owner: 'shared', fields: [], locked: false},
     origin: {actor: 'agent', changeSetId: 'bootstrap'},
   };
+}
+
+function defaultTracks(): VideoSpec['editSpec']['tracks'] {
+  return [
+    {id: 'video-overlay', kind: 'overlay', name: 'V2 · Overlay', order: 0, visible: true, muted: false, solo: false, locked: false, gainDb: 0},
+    {id: 'video-main', kind: 'video', name: 'V1 · Main', order: 1, visible: true, muted: false, solo: false, locked: false, gainDb: 0},
+    {id: 'caption-main', kind: 'caption', name: 'C1 · Captions', order: 2, visible: true, muted: false, solo: false, locked: false, gainDb: 0},
+    {id: 'audio-narration', kind: 'audio', name: 'A1 · Narration', order: 3, visible: true, muted: false, solo: false, locked: false, gainDb: 0},
+    {id: 'audio-music', kind: 'audio', name: 'A2 · Music', order: 4, visible: true, muted: false, solo: false, locked: false, gainDb: -18},
+  ];
 }
 
 export function createDefaultVideoSpec(projectId = 'transformer-60s'): VideoSpec {
@@ -176,8 +193,23 @@ export function createDefaultVideoSpec(projectId = 'transformer-60s'): VideoSpec
       scenes: storyScenes,
     },
     editSpec: {
+      tracks: defaultTracks(),
       scenes: editScenes,
-      globalAudio: {narrationAssetId: null, bgmAssetId: null, bgmGainDb: -18},
+      globalAudio: {
+        narrationAssetId: null,
+        narrationSegments: [],
+        tts: {
+          provider: 'siliconflow',
+          model: 'fnlp/MOSS-TTSD-v0.5',
+          voice: 'FunAudioLLM/CosyVoice2-0.5B:charles',
+          speed: 1.08,
+          gainDb: 0,
+          responseFormat: 'wav',
+          sampleRate: 44100,
+        },
+        bgmAssetId: null,
+        bgmGainDb: -18,
+      },
     },
     constraints: {maxDurationMs: 180_000, safeAreaPct: 6, loudnessTargetLUFS: -14},
     provenance: {
@@ -188,4 +220,3 @@ export function createDefaultVideoSpec(projectId = 'transformer-60s'): VideoSpec
     },
   };
 }
-

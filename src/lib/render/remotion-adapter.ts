@@ -7,19 +7,28 @@ import {renderMedia, selectComposition} from '@remotion/renderer';
 import type {VideoSpec} from '@/lib/video-spec/schema';
 
 let bundlePromise: Promise<string> | undefined;
+let bundleAssetKey: string | undefined;
 
-function getBundle() {
-  bundlePromise ??= bundle({
-    entryPoint: path.join(process.cwd(), 'src', 'remotion', 'index.ts'),
-    publicDir: path.join(process.cwd(), 'public'),
-    onProgress: () => undefined,
-  });
+function getBundle(spec: VideoSpec) {
+  const assetKey = spec.assets
+    .filter((asset) => asset.src.startsWith('/'))
+    .map((asset) => `${asset.src}:${asset.checksum ?? asset.id}`)
+    .sort()
+    .join('|');
+  if (!bundlePromise || bundleAssetKey !== assetKey) {
+    bundleAssetKey = assetKey;
+    bundlePromise = bundle({
+      entryPoint: path.join(process.cwd(), 'src', 'remotion', 'index.ts'),
+      publicDir: path.join(process.cwd(), 'public'),
+      onProgress: () => undefined,
+    });
+  }
   return bundlePromise;
 }
 
 export async function renderRemotion(spec: VideoSpec, outputPath: string, previewFrames?: number) {
   await mkdir(path.dirname(outputPath), {recursive: true});
-  const serveUrl = await getBundle();
+  const serveUrl = await getBundle(spec);
   const inputProps = {spec};
   const browserExecutable = process.env.PICUT_CHROME_EXECUTABLE ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
   const composition = await selectComposition({serveUrl, id: 'PiCutVideo', inputProps, browserExecutable, logLevel: 'warn'});
@@ -41,4 +50,3 @@ export async function renderRemotion(spec: VideoSpec, outputPath: string, previe
   });
   return outputPath;
 }
-

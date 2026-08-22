@@ -1,5 +1,6 @@
 import {createChangeSet} from '@/lib/video-spec/patch';
 import type {ChangeSet, VideoSpec} from '@/lib/video-spec/schema';
+import {VIDEO_THEME_PRESETS, type VideoThemeName} from '@/lib/video-spec/themes';
 
 const HEX = /#[0-9a-fA-F]{6}/;
 
@@ -12,7 +13,24 @@ export function changeSetFromInstruction(spec: VideoSpec, instruction: string, a
   const patch: ChangeSet['patch'] = [];
   const color = instruction.match(HEX)?.[0]
     ?? (normalized.includes('橙') ? '#FF8A5B' : normalized.includes('蓝') ? '#4D8DFF' : normalized.includes('绿') ? '#38E0C1' : undefined);
-  if (color) patch.push({op: 'replace', path: `/editSpec/scenes/${index}/props/accentColor`, value: color});
+  const themeIntent = /全局|整体|全片|主题|风格|背景|配色/.test(normalized);
+  const theme: VideoThemeName | undefined = /霓虹|未来|紫/.test(normalized) ? 'neon'
+    : /自然|森林|生态|绿色/.test(normalized) ? 'nature'
+      : /暖|温暖|橙|红/.test(normalized) ? 'warm'
+        : /极简|黑白|单色/.test(normalized) ? 'minimal'
+          : /科技|科学|天空|蓝/.test(normalized) ? 'science'
+            : /编辑|杂志|默认/.test(normalized) ? 'editorial'
+              : undefined;
+  if (themeIntent && theme) {
+    const preset = VIDEO_THEME_PRESETS[theme];
+    patch.push(
+      {op: 'replace', path: '/style/themeRef', value: `picut-${theme}`},
+      {op: 'replace', path: '/style/tokens', value: preset.tokens},
+      ...spec.editSpec.scenes.map((_, sceneIndex) => ({op: 'replace' as const, path: `/editSpec/scenes/${sceneIndex}/props/accentColor`, value: preset.tokens.primary})),
+    );
+  } else if (color) {
+    patch.push({op: 'replace', path: `/editSpec/scenes/${index}/props/accentColor`, value: color});
+  }
 
   const secondsMatch = normalized.match(/(?:延长|改成|调整为|duration|时长)[^\d]*(\d+(?:\.\d+)?)\s*(?:秒|s)/);
   if (secondsMatch) {
