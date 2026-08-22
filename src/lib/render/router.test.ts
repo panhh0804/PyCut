@@ -23,4 +23,21 @@ describe('render engine autonomous router', () => {
     expect(decision.selected).toBe('hyperframes');
     expect(decision.fallback).toBe('remotion');
   });
+
+  it('understands free canvas layer complexity instead of treating it as an unknown template', () => {
+    const spec = createDefaultVideoSpec('route-free-canvas');
+    spec.editSpec.scenes[0].component = 'SceneCanvas';
+    spec.editSpec.scenes[0].props = {
+      background: {type: 'solid', colors: ['#071522']},
+      layers: [
+        {id: 'title', type: 'text', x: 8, y: 10, width: 60, height: 22, content: '自由画布'},
+        {id: 'data', type: 'chart', x: 10, y: 45, width: 72, height: 40, labels: ['A', 'B'], values: [30, 70]},
+      ],
+    };
+    const decision = routeRenderBackend(spec);
+    const scene = decision.scenes.find((item) => item.sceneId === 'scene-01');
+    expect(scene?.preferred).toBe('remotion');
+    expect(scene?.reason).toContain('SceneCanvas');
+    expect(decision.reasons.some((reason) => reason.includes('自由画布'))).toBe(true);
+  });
 });

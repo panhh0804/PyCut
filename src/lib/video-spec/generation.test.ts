@@ -1,5 +1,6 @@
 import {describe, expect, it} from 'vitest';
 import {videoSpecFromAgentPlan, type AgentVideoPlan} from './generation';
+import {compileVideoSpec} from './compiler';
 import {validateVideoSpec} from './validation';
 
 const plan: AgentVideoPlan = {
@@ -24,6 +25,37 @@ describe('π Agent plan to VideoSpec', () => {
     expect(spec.storySpec.scenes.some((scene) => /Transformer|云朵/.test(scene.narration))).toBe(false);
     expect(spec.editSpec.scenes[0].props.mediaQuery).toBe('hydrothermal vent black smoker deep sea');
     expect(spec.editSpec.scenes.reduce((sum, scene) => sum + scene.durationFrames, 0)).toBe(210);
+    expect(validateVideoSpec(spec).valid).toBe(true);
+  });
+
+  it('preserves a model-authored free canvas instead of collapsing it into a card template', () => {
+    const canvasPlan: AgentVideoPlan = {
+      title: '十二秒看懂极光',
+      logline: '用空间尺度和粒子运动解释极光。',
+      audience: '普通科普观众',
+      durationSeconds: 12,
+      theme: 'science',
+      style: {background: '#020713', primary: '#6EFBCE', accent: '#B58CFF', text: '#F7FBFF', radius: 26},
+      scenes: [{
+        purpose: '建立太阳风与磁场关系', narration: '带电粒子沿着地球磁场冲向两极。', visualIntent: '斜向磁力线穿过空间，标题悬浮在左上角', tempo: 'fast', durationSeconds: 12,
+        visualType: 'canvas', kicker: 'AURORA · FIELD', headline: '天空为什么会发光？', body: '太阳风 × 地球磁场', mediaQuery: 'aurora borealis real footage night sky',
+        canvas: {
+          background: {type: 'radial', colors: ['#020713', '#123552'], focalX: 76, focalY: 22}, texture: 'dots',
+          camera: {startScale: 1, endScale: 1.06, panX: -2, panY: 1},
+          layers: [
+            {id: 'title', type: 'text', x: 7, y: 10, width: 58, height: 26, content: '天空为什么会发光？', style: {fontSize: 82, fontWeight: 900, color: '#F7FBFF'}, motion: {preset: 'rise', delayFrames: 4}},
+            {id: 'field', type: 'line', x: 18, y: 52, width: 68, height: 3, style: {color: '#6EFBCE', borderWidth: 4}, motion: {preset: 'draw'}},
+            {id: 'particles', type: 'particles', x: 52, y: 18, width: 42, height: 62, content: '24', style: {color: '#B58CFF'}},
+          ],
+        },
+      }],
+    };
+    const spec = videoSpecFromAgentPlan('aurora-free-canvas', '生成一个12秒极光科普视频', canvasPlan);
+    const compiled = compileVideoSpec(spec);
+    expect(spec.editSpec.scenes[0].component).toBe('SceneCanvas');
+    expect(spec.editSpec.scenes[0].props.mediaQuery).toBe('aurora borealis real footage night sky');
+    expect(spec.style.tokens.primary).toBe('#6EFBCE');
+    expect((compiled.scenes[0].props.layers as Array<{id: string; motion: {durationFrames: number}}>)[0].motion.durationFrames).toBe(18);
     expect(validateVideoSpec(spec).valid).toBe(true);
   });
 });

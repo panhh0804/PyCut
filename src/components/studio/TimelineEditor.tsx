@@ -3,6 +3,7 @@
 import {useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent} from 'react';
 import {Copy, Eye, EyeOff, Film, Layers3, Lock, Magnet, Pause, Play, Plus, Scissors, Subtitles, Trash2, Unlock, Volume2, VolumeX, ZoomIn, ZoomOut} from 'lucide-react';
 import type {PatchOperation, TimelineTrack, VideoSpec} from '@/lib/video-spec/schema';
+import {rippleReorderScene} from '@/lib/video-spec/timeline';
 
 interface TimelineEditorProps {
   spec: VideoSpec;
@@ -66,9 +67,33 @@ export function TimelineEditor(props: TimelineEditorProps) {
       const index = spec.editSpec.scenes.findIndex((scene) => scene.id === current.sceneId);
       if (index < 0) { setDrag(null); return; }
       if (current.mode === 'move') {
-        if (current.delta !== 0) patch.push({op: 'replace', path: `/editSpec/scenes/${index}/startFrame`, value: Math.max(0, current.originalStart + current.delta)});
+        const desiredStart = Math.max(0, current.originalStart + current.delta);
         if (targetTrack && visualKinds.has(targetTrack.kind) && targetTrack.id !== current.trackId && !targetTrack.locked) {
+          if (current.delta !== 0) patch.push({op: 'replace', path: `/editSpec/scenes/${index}/startFrame`, value: desiredStart});
           patch.push({op: 'replace', path: `/editSpec/scenes/${index}/trackId`, value: targetTrack.id});
+          onSeek(desiredStart);
+        } else if (current.delta !== 0) {
+          const reordered = rippleReorderScene(spec, current.sceneId, desiredStart);
+          if (reordered.changed) {
+            patch.push(
+              {op: 'replace', path: '/editSpec/scenes', value: reordered.editScenes},
+              {op: 'replace', path: '/storySpec/scenes', value: reordered.storyScenes},
+            );
+            if (spec.editSpec.globalAudio.narrationSegments.length) patch.push({op: 'replace', path: '/editSpec/globalAudio/narrationSegments', value: reordered.narrationSegments});
+            onSeek(reordered.targetStartFrame);
+          } else {
+            const trackScenes = spec.editSpec.scenes.filter((scene) => scene.trackId === current.trackId).sort((left, right) => left.startFrame - right.startFrame);
+            const position = trackScenes.findIndex((scene) => scene.id === current.sceneId);
+            const previous = trackScenes[position - 1];
+            const next = trackScenes[position + 1];
+            const minimum = previous ? previous.startFrame + previous.durationFrames : 0;
+            const maximum = next ? next.startFrame - current.originalDuration : Number.POSITIVE_INFINITY;
+            const clamped = Math.max(minimum, Math.min(maximum, desiredStart));
+            if (clamped !== current.originalStart) {
+              patch.push({op: 'replace', path: `/editSpec/scenes/${index}/startFrame`, value: clamped});
+              onSeek(clamped);
+            }
+          }
         }
       } else if (current.mode === 'trim-start') {
         const minimumDuration = Math.max(1, Math.round(spec.canvas.fps * 0.1));
@@ -91,7 +116,7 @@ export function TimelineEditor(props: TimelineEditorProps) {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', end);
     };
-  }, [contentWidth, drag, durationFrames, onPatch, quantize, spec.canvas.fps, spec.editSpec.scenes, spec.editSpec.tracks]);
+  }, [contentWidth, drag, durationFrames, onPatch, onSeek, quantize, spec, spec.canvas.fps, spec.editSpec.scenes, spec.editSpec.tracks]);
 
   const beginDrag = (event: ReactPointerEvent, sceneId: string, mode: DragMode) => {
     if (disabled) return;

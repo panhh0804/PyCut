@@ -95,4 +95,19 @@ describe('VideoSpec compiler contract', () => {
     (badDelivery as {schemaVersion: string}).schemaVersion = '0.9.0';
     expect(status(badDelivery, 'G7')).toBe('fail');
   });
+
+  it('allows decorative canvas bleed while keeping readable content inside the visible frame', () => {
+    const spec = createDefaultVideoSpec('canvas-safe-area');
+    spec.editSpec.scenes[0].component = 'SceneCanvas';
+    spec.editSpec.scenes[0].props = {
+      background: {type: 'solid', colors: ['#071522']},
+      layers: [
+        {id: 'particles', type: 'particles', x: -24, y: 8, width: 80, height: 70},
+        {id: 'title', type: 'text', x: -2, y: 8, width: 40, height: 12, content: '裁切的标题'},
+      ],
+    };
+    const report = validateVideoSpec(spec);
+    expect(report.gates.find((gate) => gate.id === 'G5')?.status).toBe('fail');
+    expect(report.gates.find((gate) => gate.id === 'G5')?.details.join('\n')).toContain('只有装饰图层可进入出血区');
+  });
 });

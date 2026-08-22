@@ -1,0 +1,1419 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="theme-color" content="#07131d" />
+  <title>πCut 项目汇报｜Agentic Video Compiler</title>
+  <style>
+    :root {
+      --bg: #07131d;
+      --bg-2: #0a1a27;
+      --panel: #0e2433;
+      --panel-2: #122d3f;
+      --ink: #eef9ff;
+      --muted: #8fa9b9;
+      --line: rgba(151, 197, 220, 0.18);
+      --mint: #42e4c0;
+      --mint-soft: rgba(66, 228, 192, 0.14);
+      --coral: #ff8a63;
+      --coral-soft: rgba(255, 138, 99, 0.14);
+      --blue: #75ceff;
+      --blue-soft: rgba(117, 206, 255, 0.13);
+      --yellow: #ffd166;
+      --stage-scale: 1;
+      --font-sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Microsoft YaHei", sans-serif;
+      --font-mono: "SFMono-Regular", "Cascadia Code", "Roboto Mono", Consolas, monospace;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #030a10;
+      color: var(--ink);
+      font-family: var(--font-sans);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background:
+        radial-gradient(circle at 18% 8%, rgba(66, 228, 192, 0.09), transparent 32%),
+        radial-gradient(circle at 88% 92%, rgba(255, 138, 99, 0.08), transparent 28%);
+    }
+
+    button { font: inherit; }
+
+    #stage {
+      position: fixed;
+      left: 50%;
+      top: 50%;
+      width: 1600px;
+      height: 900px;
+      transform: translate(-50%, -50%) scale(var(--stage-scale));
+      transform-origin: center center;
+      overflow: hidden;
+      background: var(--bg);
+      box-shadow: 0 42px 120px rgba(0, 0, 0, 0.48);
+    }
+
+    .slide {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 22px;
+      padding: 52px 62px 38px;
+      overflow: hidden;
+      opacity: 0;
+      visibility: hidden;
+      transform: translate3d(32px, 0, 0);
+      transition: opacity 360ms ease, transform 480ms cubic-bezier(.22,.8,.24,1), visibility 0s linear 480ms;
+      background:
+        linear-gradient(rgba(151,197,220,.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(151,197,220,.035) 1px, transparent 1px),
+        radial-gradient(circle at 12% 8%, rgba(66,228,192,.065), transparent 31%),
+        var(--bg);
+      background-size: 40px 40px, 40px 40px, auto, auto;
+    }
+
+    .slide::after {
+      content: "";
+      position: absolute;
+      left: 62px;
+      right: 62px;
+      bottom: 28px;
+      height: 1px;
+      background: linear-gradient(90deg, var(--line), transparent 75%);
+      pointer-events: none;
+    }
+
+    .slide.active {
+      opacity: 1;
+      visibility: visible;
+      transform: translate3d(0,0,0);
+      transition-delay: 0s;
+      z-index: 2;
+    }
+
+    .slide.before { transform: translate3d(-32px,0,0); }
+
+    .slide[data-theme="coral"] {
+      background:
+        linear-gradient(rgba(255,138,99,.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,138,99,.035) 1px, transparent 1px),
+        radial-gradient(circle at 82% 18%, rgba(255,138,99,.095), transparent 35%),
+        var(--bg);
+      background-size: 40px 40px, 40px 40px, auto, auto;
+    }
+
+    .slide[data-theme="image"] { background: #06111a; }
+
+    .slide[data-theme="image"]::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, rgba(6,17,26,.98) 0%, rgba(6,17,26,.88) 34%, rgba(6,17,26,.30) 72%, rgba(6,17,26,.55) 100%);
+      z-index: 0;
+    }
+
+    .slide > * { position: relative; z-index: 1; }
+
+    .slide-head,
+    .slide-foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-width: 0;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 17px;
+      font-weight: 760;
+      letter-spacing: .02em;
+    }
+
+    .brand-mark {
+      display: grid;
+      width: 34px;
+      height: 34px;
+      place-items: center;
+      border-radius: 10px;
+      color: #03120f;
+      background: var(--mint);
+      box-shadow: 0 0 30px rgba(66,228,192,.22);
+      font: 900 22px/1 Georgia, serif;
+    }
+
+    .section-id,
+    .kicker,
+    .eyebrow,
+    .meta-label {
+      text-transform: uppercase;
+      letter-spacing: .17em;
+      font-size: 13px;
+      font-weight: 760;
+      color: var(--muted);
+    }
+
+    .section-id { font-family: var(--font-mono); letter-spacing: .08em; }
+    .kicker, .eyebrow { color: var(--mint); }
+    .eyebrow.coral, .coral { color: var(--coral); }
+    .blue { color: var(--blue); }
+    .mint { color: var(--mint); }
+
+    h1, h2, h3, p { margin: 0; }
+    h1, h2, h3 { text-wrap: balance; }
+
+    .title-xl {
+      max-width: 1220px;
+      font-size: 92px;
+      line-height: 1.02;
+      letter-spacing: -.055em;
+      font-weight: 850;
+    }
+
+    .title-lg {
+      max-width: 1260px;
+      font-size: 61px;
+      line-height: 1.08;
+      letter-spacing: -.038em;
+      font-weight: 820;
+    }
+
+    .lede {
+      max-width: 1020px;
+      color: #b9cbd7;
+      font-size: 25px;
+      line-height: 1.55;
+      letter-spacing: -.012em;
+    }
+
+    .small { color: var(--muted); font-size: 17px; line-height: 1.55; }
+    .mono { font-family: var(--font-mono); }
+
+    .slide-main {
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .slide-foot {
+      z-index: 2;
+      padding-top: 8px;
+      color: var(--muted);
+      font-size: 13px;
+      letter-spacing: .04em;
+    }
+
+    .slide-foot strong { color: #c9dde8; font-weight: 650; }
+
+    .rule {
+      width: 88px;
+      height: 4px;
+      margin: 24px 0;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--mint), var(--blue));
+    }
+
+    .tag-row { display: flex; flex-wrap: wrap; gap: 10px; }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 34px;
+      padding: 7px 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: #bad0dc;
+      background: rgba(8, 24, 35, .74);
+      font-size: 14px;
+      white-space: nowrap;
+    }
+
+    .tag::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--mint);
+      box-shadow: 0 0 12px rgba(66,228,192,.72);
+    }
+
+    .stat-row {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 22px;
+      padding-top: 28px;
+      border-top: 1px solid var(--line);
+    }
+
+    .stat strong {
+      display: block;
+      font: 760 42px/1 var(--font-mono);
+      color: var(--ink);
+    }
+
+    .stat span {
+      display: block;
+      margin-top: 9px;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .hero-bg {
+      position: absolute;
+      inset: 0 0 0 42%;
+      width: 58%;
+      height: 100%;
+      object-fit: cover;
+      object-position: 56% center;
+      opacity: .67;
+      filter: saturate(.88) contrast(1.04);
+      z-index: 0;
+    }
+
+    .hero-main {
+      display: grid;
+      grid-template-columns: 1.1fr .9fr;
+      align-items: center;
+      gap: 70px;
+    }
+
+    .hero-symbol {
+      font: 900 238px/.78 Georgia, serif;
+      letter-spacing: -.08em;
+      color: var(--mint);
+      text-shadow: 0 0 80px rgba(66,228,192,.22);
+    }
+
+    .hero-title {
+      margin-top: 12px;
+      font-size: 84px;
+      line-height: .95;
+      letter-spacing: -.065em;
+      font-weight: 880;
+    }
+
+    .hero-subtitle {
+      margin-top: 26px;
+      max-width: 700px;
+      font-size: 26px;
+      line-height: 1.42;
+      color: #c3d8e3;
+    }
+
+    .hero-meta {
+      align-self: end;
+      justify-self: end;
+      width: 330px;
+      padding: 20px 0 10px 28px;
+      border-left: 2px solid var(--mint);
+      color: #d3e5ee;
+      font-size: 18px;
+      line-height: 1.8;
+    }
+
+    .hero-meta .meta-label { display:block; margin-bottom: 8px; color: var(--mint); }
+
+    .thesis-grid {
+      display: grid;
+      grid-template-columns: .92fr 1.08fr;
+      gap: 72px;
+      align-items: center;
+    }
+
+    .giant-quote {
+      position: relative;
+      font-size: 68px;
+      line-height: 1.12;
+      letter-spacing: -.045em;
+      font-weight: 820;
+    }
+
+    .giant-quote::before {
+      content: "“";
+      position: absolute;
+      top: -84px;
+      left: -32px;
+      font: 180px/1 Georgia, serif;
+      color: rgba(66,228,192,.15);
+    }
+
+    .equation-list { display: grid; gap: 6px; }
+
+    .equation {
+      display: grid;
+      grid-template-columns: 1fr 52px 1fr;
+      align-items: center;
+      min-height: 116px;
+      padding: 18px 8px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .equation:last-child { border-bottom: 0; }
+    .equation .term { font-size: 28px; font-weight: 730; }
+    .equation .op { color: var(--muted); text-align: center; font-size: 27px; }
+    .equation .result { color: #b9ced9; font-size: 21px; line-height: 1.4; }
+    .equation.emphasis .term, .equation.emphasis .result { color: var(--mint); }
+
+    .architecture {
+      display: grid;
+      grid-template-columns: repeat(11, auto);
+      align-items: center;
+      justify-content: space-between;
+      margin: 44px 0 50px;
+    }
+
+    .arch-node {
+      width: 188px;
+      min-height: 150px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 22px;
+      border-top: 3px solid var(--mint);
+      background: linear-gradient(180deg, rgba(66,228,192,.10), rgba(13,36,51,.34));
+    }
+
+    .arch-node.coral-node {
+      border-color: var(--coral);
+      background: linear-gradient(180deg, rgba(255,138,99,.10), rgba(13,36,51,.34));
+    }
+
+    .arch-node.blue-node {
+      border-color: var(--blue);
+      background: linear-gradient(180deg, rgba(117,206,255,.10), rgba(13,36,51,.34));
+    }
+
+    .arch-node .num { font: 700 14px/1 var(--font-mono); color: var(--muted); }
+    .arch-node h3 { font-size: 23px; line-height: 1.14; }
+    .arch-node p { color: var(--muted); font-size: 14px; line-height: 1.35; }
+    .arch-arrow { color: #587286; font-size: 29px; }
+
+    .contract-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 36px;
+    }
+
+    .contract {
+      padding-left: 18px;
+      border-left: 2px solid var(--line);
+    }
+
+    .contract strong { display:block; font-size:19px; margin-bottom:8px; }
+    .contract span { color:var(--muted); font-size:15px; line-height:1.5; }
+
+    .product-layout {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      gap: 44px;
+      min-height: 0;
+      align-items: stretch;
+    }
+
+    .side-copy {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 22px;
+    }
+
+    .side-copy h2 { font-size: 54px; line-height: 1.05; letter-spacing: -.04em; }
+    .side-copy p { color: #b7cbd6; font-size: 19px; line-height: 1.55; }
+
+    .numbered-points { display: grid; gap: 17px; margin-top: 6px; }
+
+    .numbered-point {
+      display: grid;
+      grid-template-columns: 33px 1fr;
+      gap: 13px;
+      align-items: start;
+      color: #d5e5ed;
+      font-size: 16px;
+      line-height: 1.45;
+    }
+
+    .numbered-point b {
+      display: grid;
+      width: 28px;
+      height: 28px;
+      place-items: center;
+      border-radius: 50%;
+      color: var(--mint);
+      border: 1px solid rgba(66,228,192,.42);
+      font: 700 12px/1 var(--font-mono);
+    }
+
+    .image-frame {
+      position: relative;
+      min-height: 0;
+      overflow: hidden;
+      border: 1px solid rgba(135,190,217,.25);
+      border-radius: 18px;
+      background: #07131d;
+      box-shadow: 0 28px 62px rgba(0,0,0,.32);
+    }
+
+    .image-frame img {
+      width: 100%;
+      height: 100%;
+      display: block;
+      object-fit: cover;
+    }
+
+    .image-caption {
+      position: absolute;
+      left: 20px;
+      bottom: 18px;
+      padding: 9px 12px;
+      border: 1px solid rgba(167,211,230,.22);
+      border-radius: 9px;
+      background: rgba(3,13,20,.78);
+      backdrop-filter: blur(10px);
+      color: #cbe0ea;
+      font-size: 13px;
+    }
+
+    .agent-layout {
+      display: grid;
+      grid-template-columns: 1.18fr .82fr;
+      gap: 44px;
+      min-height: 0;
+    }
+
+    .fact-stack {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 28px;
+    }
+
+    .fact {
+      display: grid;
+      grid-template-columns: 90px 1fr;
+      gap: 20px;
+      padding-bottom: 22px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .fact:last-child { border-bottom: 0; }
+    .fact .big { color: var(--mint); font: 760 34px/1 var(--font-mono); }
+    .fact h3 { font-size: 21px; margin-bottom: 7px; }
+    .fact p { color: var(--muted); font-size: 15px; line-height: 1.5; }
+
+    .spec-layout {
+      display: grid;
+      grid-template-columns: .9fr 1.1fr;
+      gap: 68px;
+      align-items: center;
+    }
+
+    .code-panel {
+      position: relative;
+      padding: 28px 32px 32px;
+      border: 1px solid rgba(117,206,255,.24);
+      border-radius: 16px;
+      background: linear-gradient(180deg, rgba(14,36,51,.96), rgba(6,19,29,.96));
+      box-shadow: 0 24px 70px rgba(0,0,0,.28);
+      font: 16px/1.63 var(--font-mono);
+      color: #b9ceda;
+    }
+
+    .code-panel::before {
+      content: "VideoSpec · r52";
+      display: block;
+      margin-bottom: 18px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--line);
+      color: var(--mint);
+      font-weight: 720;
+    }
+
+    .code-panel .key { color: var(--blue); }
+    .code-panel .str { color: #f3bb92; }
+    .code-panel .val { color: var(--mint); }
+
+    .truth-map { display: grid; gap: 20px; }
+
+    .truth-core {
+      padding: 26px 30px;
+      border-left: 5px solid var(--mint);
+      background: var(--mint-soft);
+    }
+
+    .truth-core h3 { font-size: 30px; }
+    .truth-core p { margin-top: 8px; color: #b9d4dd; font-size: 17px; }
+
+    .truth-output {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 14px;
+    }
+
+    .output-line {
+      padding: 17px 18px;
+      border-bottom: 1px solid var(--line);
+      color: #d1e2ea;
+      font-size: 17px;
+    }
+
+    .output-line span {
+      display: block;
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .cycle {
+      display:flex;
+      align-items:center;
+      gap: 12px;
+      margin-top: 8px;
+      color: var(--muted);
+      font: 14px/1.4 var(--font-mono);
+    }
+
+    .cycle b { color: var(--coral); font-weight: 720; }
+
+    .collab-layout {
+      display: grid;
+      grid-template-columns: 1fr 350px;
+      gap: 40px;
+      min-height: 0;
+    }
+
+    .collab-rail {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 24px;
+    }
+
+    .rail-item {
+      padding: 5px 0 18px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .rail-item:last-child { border-bottom: 0; }
+    .rail-item b { display:block; margin-bottom:8px; color:var(--mint); font:700 14px/1 var(--font-mono); }
+    .rail-item h3 { font-size:22px; margin-bottom:7px; }
+    .rail-item p { color:var(--muted); font-size:15px; line-height:1.45; }
+
+    .durable-layout {
+      display: grid;
+      grid-template-columns: 1.14fr .86fr;
+      gap: 44px;
+      min-height: 0;
+    }
+
+    .sequence {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 0;
+    }
+
+    .sequence-step {
+      position: relative;
+      display: grid;
+      grid-template-columns: 58px 1fr;
+      gap: 16px;
+      min-height: 96px;
+    }
+
+    .sequence-step:not(:last-child)::after {
+      content:"";
+      position:absolute;
+      left: 27px;
+      top: 50px;
+      bottom: 4px;
+      width: 1px;
+      background: linear-gradient(var(--mint), rgba(66,228,192,.12));
+    }
+
+    .sequence-step .dot {
+      display:grid;
+      width:56px;
+      height:56px;
+      place-items:center;
+      border:1px solid rgba(66,228,192,.38);
+      border-radius:50%;
+      color:var(--mint);
+      background:rgba(5,20,28,.88);
+      font:700 14px/1 var(--font-mono);
+    }
+
+    .sequence-step h3 { font-size:20px; margin:5px 0 7px; }
+    .sequence-step p { color:var(--muted); font-size:14px; line-height:1.45; }
+
+    .dual-layout {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 34px;
+      align-items: center;
+    }
+
+    .engine {
+      position: relative;
+      overflow: hidden;
+      border-top: 4px solid var(--mint);
+      background: rgba(13,36,51,.45);
+    }
+
+    .engine.hyper { border-color: var(--coral); }
+    .engine-head { display:flex; align-items:center; justify-content:space-between; padding:18px 20px 16px; }
+    .engine-head h3 { font-size:27px; }
+    .engine-head span { color:var(--muted); font:13px/1 var(--font-mono); }
+    .engine img { display:block; width:100%; aspect-ratio: 8 / 3; object-fit:cover; }
+    .engine p { padding:16px 20px 20px; color:#b7cbd6; font-size:15px; line-height:1.45; }
+
+    .same-source {
+      position:absolute;
+      left:50%;
+      top:50%;
+      transform:translate(-50%,-50%);
+      z-index:3;
+      width:132px;
+      height:132px;
+      display:grid;
+      place-items:center;
+      border:1px solid rgba(238,249,255,.28);
+      border-radius:50%;
+      background:rgba(4,15,23,.90);
+      box-shadow:0 18px 45px rgba(0,0,0,.45);
+      text-align:center;
+      color:#dcedf4;
+      font:700 14px/1.45 var(--font-mono);
+    }
+
+    .route-layout {
+      display: grid;
+      grid-template-columns: 1.13fr .87fr;
+      gap: 46px;
+      min-height: 0;
+    }
+
+    .route-score {
+      align-self:center;
+      display:grid;
+      gap:26px;
+    }
+
+    .score-ring {
+      width:230px;
+      height:230px;
+      display:grid;
+      place-items:center;
+      border-radius:50%;
+      background:conic-gradient(var(--coral) 0 77%, rgba(255,255,255,.09) 77% 100%);
+      box-shadow:0 0 80px rgba(255,138,99,.13);
+    }
+
+    .score-ring::before {
+      content:"";
+      grid-area:1/1;
+      width:184px;
+      height:184px;
+      border-radius:50%;
+      background:var(--bg);
+    }
+
+    .score-ring strong {
+      grid-area:1/1;
+      position:relative;
+      z-index:1;
+      color:var(--coral);
+      font:780 55px/1 var(--font-mono);
+    }
+
+    .score-copy h3 { font-size:31px; margin-bottom:10px; }
+    .score-copy p { color:#b6cbd6; font-size:17px; line-height:1.55; }
+
+    .trace-list { display:grid; gap:13px; }
+
+    .trace-item {
+      display:grid;
+      grid-template-columns:95px 1fr;
+      gap:14px;
+      padding:13px 0;
+      border-bottom:1px solid var(--line);
+      font-size:14px;
+    }
+
+    .trace-item code { color:var(--mint); font-family:var(--font-mono); }
+    .trace-item span { color:var(--muted); }
+
+    .quality-layout {
+      display: grid;
+      grid-template-columns: 1fr 390px;
+      gap: 56px;
+      align-items: center;
+    }
+
+    .gate-rail {
+      display:grid;
+      grid-template-columns:repeat(7,1fr);
+      gap:10px;
+      margin:34px 0 44px;
+    }
+
+    .gate {
+      min-height:122px;
+      display:flex;
+      flex-direction:column;
+      justify-content:space-between;
+      padding:18px 14px;
+      border-top:3px solid var(--mint);
+      background:linear-gradient(180deg,rgba(66,228,192,.10),rgba(13,36,51,.28));
+    }
+
+    .gate.warn { border-color:var(--yellow); background:linear-gradient(180deg,rgba(255,209,102,.10),rgba(13,36,51,.28)); }
+    .gate b { font:760 16px/1 var(--font-mono); color:var(--mint); }
+    .gate.warn b { color:var(--yellow); }
+    .gate span { color:#c5d8e1; font-size:13px; line-height:1.35; }
+
+    .deliverables {
+      display:grid;
+      grid-template-columns:repeat(5,1fr);
+      gap:14px;
+    }
+
+    .deliverable {
+      padding:16px 10px 14px;
+      border-bottom:2px solid var(--line);
+      color:#d5e7ee;
+      font:700 15px/1.2 var(--font-mono);
+      text-align:center;
+    }
+
+    .quality-aside {
+      padding:30px;
+      border-left:3px solid var(--coral);
+      background:var(--coral-soft);
+    }
+
+    .quality-aside .big {
+      color:var(--coral);
+      font:780 62px/1 var(--font-mono);
+      letter-spacing:-.06em;
+    }
+
+    .quality-aside h3 { margin:14px 0 10px; font-size:25px; }
+    .quality-aside p { color:#c7d8df; font-size:16px; line-height:1.55; }
+
+    .boundary-layout {
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:88px;
+      align-items:center;
+    }
+
+    .boundary-col { padding-top:22px; border-top:4px solid var(--mint); }
+    .boundary-col.open { border-color:var(--coral); }
+    .boundary-col h3 { font-size:31px; margin-bottom:25px; }
+
+    .boundary-list { display:grid; gap:19px; }
+    .boundary-item { display:grid; grid-template-columns:26px 1fr; gap:14px; align-items:start; color:#d0e1e8; font-size:18px; line-height:1.45; }
+    .boundary-item b { color:var(--mint); }
+    .boundary-col.open .boundary-item b { color:var(--coral); }
+    .boundary-item small { display:block; margin-top:4px; color:var(--muted); font-size:14px; }
+
+    .closing-main {
+      display:grid;
+      grid-template-columns:1.15fr .85fr;
+      gap:80px;
+      align-items:center;
+    }
+
+    .closing-title {
+      font-size:105px;
+      line-height:.98;
+      letter-spacing:-.065em;
+      font-weight:880;
+    }
+
+    .closing-title .outline {
+      color:transparent;
+      -webkit-text-stroke:1.5px rgba(238,249,255,.58);
+    }
+
+    .closing-points { display:grid; gap:22px; }
+    .closing-point { padding:0 0 20px 22px; border-left:2px solid var(--line); }
+    .closing-point b { display:block; color:var(--mint); font:700 13px/1 var(--font-mono); margin-bottom:9px; }
+    .closing-point span { color:#d6e6ed; font-size:21px; line-height:1.42; }
+
+    #controls {
+      position: fixed;
+      right: max(18px, env(safe-area-inset-right));
+      bottom: max(18px, env(safe-area-inset-bottom));
+      z-index: 30;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 7px;
+      border: 1px solid rgba(172,214,232,.18);
+      border-radius: 999px;
+      background: rgba(4,14,21,.72);
+      backdrop-filter: blur(12px);
+      opacity: .62;
+      transition: opacity 180ms ease;
+    }
+
+    #controls:hover, #controls:focus-within { opacity: 1; }
+
+    .control-btn {
+      width: 38px;
+      height: 38px;
+      border: 0;
+      border-radius: 50%;
+      color: #cfe2eb;
+      background: transparent;
+      cursor: pointer;
+    }
+
+    .control-btn:hover, .control-btn:focus-visible { outline:none; color:#04130f; background:var(--mint); }
+
+    #counter {
+      min-width: 65px;
+      color:#bdd2dc;
+      text-align:center;
+      font: 13px/1 var(--font-mono);
+    }
+
+    #progress {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 3px;
+      z-index: 35;
+      background: rgba(255,255,255,.05);
+    }
+
+    #progress > span {
+      display:block;
+      width:0;
+      height:100%;
+      background:linear-gradient(90deg,var(--mint),var(--blue),var(--coral));
+      transition:width 300ms ease;
+    }
+
+    #overview {
+      position:fixed;
+      inset:0;
+      z-index:50;
+      display:none;
+      overflow:auto;
+      padding:64px;
+      background:rgba(2,9,14,.97);
+    }
+
+    #overview.open { display:block; }
+    .overview-head { max-width:1440px; margin:0 auto 28px; display:flex; justify-content:space-between; align-items:end; }
+    .overview-head h2 { font-size:36px; }
+    .overview-head p { color:var(--muted); }
+    .overview-grid { max-width:1440px; margin:0 auto; display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:18px; }
+
+    .overview-card {
+      min-height:174px;
+      padding:22px;
+      border:1px solid var(--line);
+      border-radius:14px;
+      color:var(--ink);
+      background:linear-gradient(145deg,rgba(17,45,63,.78),rgba(7,19,29,.92));
+      text-align:left;
+      cursor:pointer;
+    }
+
+    .overview-card:hover, .overview-card:focus-visible { outline:none; border-color:var(--mint); transform:translateY(-2px); }
+    .overview-card b { display:block; color:var(--mint); font:700 13px/1 var(--font-mono); margin-bottom:22px; }
+    .overview-card span { display:block; font-size:23px; font-weight:740; line-height:1.2; }
+
+    #help {
+      position:fixed;
+      left:18px;
+      bottom:18px;
+      z-index:30;
+      color:rgba(183,207,219,.54);
+      font:12px/1.4 var(--font-mono);
+    }
+
+    @media (max-width: 700px) {
+      #controls { right: 10px; bottom: 10px; }
+      #help { display:none; }
+      #overview { padding:28px 18px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .slide, #progress > span, .overview-card { transition:none !important; }
+    }
+
+    @media print {
+      html, body { height:auto; overflow:visible; background:#fff; }
+      #stage { position:static; width:auto; height:auto; transform:none; overflow:visible; box-shadow:none; }
+      .slide { position:relative; width:1600px; height:900px; opacity:1; visibility:visible; transform:none; break-after:page; page-break-after:always; }
+      #controls, #progress, #help, #overview { display:none !important; }
+    }
+  </style>
+</head>
+<body>
+  <main id="stage" aria-live="polite">
+    <section class="slide active" data-title="πCut｜Agentic Video Compiler" data-theme="image">
+      <img class="hero-bg" src="picut-slides-assets/studio-final-ui.png" alt="πCut 完整视频编辑工作台界面" />
+      <header class="slide-head">
+        <div class="brand"><span class="brand-mark">π</span><span>πCut</span></div>
+        <span class="section-id">PROJECT REPORT · 2026.08</span>
+      </header>
+      <div class="slide-main hero-main">
+        <div>
+          <div class="hero-symbol">π</div>
+          <h1 class="hero-title">Agentic<br />Video Compiler</h1>
+          <p class="hero-subtitle">让原生 Pi 负责创作决策，让 VideoSpec 负责可审计状态，让双渲染引擎负责确定性交付。</p>
+        </div>
+        <div class="hero-meta">
+          <span class="meta-label">项目汇报</span>
+          从创作意图到 MP4<br />一套人机协作的视频工程系统
+        </div>
+      </div>
+      <footer class="slide-foot"><strong>πCut / 本地项目实况</strong><span>01</span></footer>
+    </section>
+
+    <section class="slide" data-title="生成，不等于制作系统">
+      <header class="slide-head">
+        <div class="brand"><span class="brand-mark">π</span><span>πCut</span></div>
+        <span class="section-id">WHY · THE PRODUCT THESIS</span>
+      </header>
+      <div class="slide-main thesis-grid">
+        <div>
+          <div class="eyebrow">问题不是“能不能生成”</div>
+          <div class="rule"></div>
+          <h2 class="giant-quote">生成，不等于<br />制作系统。</h2>
+          <p class="lede" style="margin-top:30px">真正的视频工作流还要回答：谁改了什么、状态能否复现、渲染为何这样选择、交付是否完整。</p>
+        </div>
+        <div class="equation-list">
+          <div class="equation">
+            <div class="term">一次性生成</div><div class="op">→</div><div class="result">结果能看，但难继续编辑与复现</div>
+          </div>
+          <div class="equation">
+            <div class="term">UI 直接改状态</div><div class="op">→</div><div class="result">人能操作，但 Agent 不知道发生了什么</div>
+          </div>
+          <div class="equation emphasis">
+            <div class="term">πCut 的选择</div><div class="op">→</div><div class="result">意图 → 结构化状态 → 质量门 → 可追踪交付</div>
+          </div>
+        </div>
+      </div>
+      <footer class="slide-foot"><strong>核心命题：把“内容生成”升级为“视频工程”</strong><span>02</span></footer>
+    </section>
+
+    <section class="slide" data-title="一条可审计的视频编译链">
+      <header class="slide-head">
+        <div class="brand"><span class="brand-mark">π</span><span>πCut</span></div>
+        <span class="section-id">SYSTEM · END-TO-END CONTRACT</span>
+      </header>
+      <div class="slide-main">
+        <div class="eyebrow">系统主线</div>
+        <h2 class="title-lg" style="margin-top:13px">一条可审计的视频编译链</h2>
+        <div class="architecture" aria-label="πCut 系统架构流程">
+          <div class="arch-node"><span class="num">01</span><h3>创作意图</h3><p>用户 brief、选中镜头与播放头上下文</p></div><span class="arch-arrow">›</span>
+          <div class="arch-node"><span class="num">02</span><h3>Native Pi</h3><p>AgentSession 观察、规划、调用工具</p></div><span class="arch-arrow">›</span>
+          <div class="arch-node blue-node"><span class="num">03</span><h3>VideoSpec</h3><p>唯一事实源、版本与 ChangeSet</p></div><span class="arch-arrow">›</span>
+          <div class="arch-node"><span class="num">04</span><h3>质量门</h3><p>G1—G7 逐级验证可交付性</p></div><span class="arch-arrow">›</span>
+          <div class="arch-node coral-node"><span class="num">05</span><h3>双引擎</h3><p>Remotion / HyperFrames 自动路由</p></div><span class="arch-arrow">›</span>
+          <div class="arch-node"><span class="num">06</span><h3>交付物</h3><p>视频、字幕、清单与完整性摘要</p></div>
+        </div>
+        <div class="contract-row">
+          <div class="contract"><strong>创作契约</strong><span>Agent 做判断，但所有修改必须落到结构化工具与可追踪版本。</span></div>
+          <div class="contract"><strong>状态契约</strong><span>工作台、时间线、Inspector、预览与渲染都消费同一份 VideoSpec。</span></div>
+          <div class="contract"><strong>交付契约</strong><span>路由原因、质量结果、资产来源与 SHA-256 一起进入清单。</span></div>
+        </div>
+      </div>
+      <footer class="slide-foot"><strong>Agentic ≠ 不确定；Compiler = 把意图变成可验证产物</strong><span>03</span></footer>
+    </section>
+
+    <section class="slide" data-title="这不是概念界面">
+      <header class="slide-head">
+        <div class="brand"><span class="brand-mark">π</span><span>πCut</span></div>
+        <span class="section-id">PRODUCT · WORKING SURFACE</span>
+      </header>
+      <div class="slide-main product-layout">
+        <div class="side-copy">
+          <div class="eyebrow">已实现工作台</div>
+          <h2>这不是<br />概念界面。</h2>
+          <p>Director、画布、Inspector、时间线与交付状态已经汇聚在同一个编辑表面。</p>
+          <div class="numbered-points">
+            <div class="numbered-point"><b>01</b><span>Agent 对话与工具轨迹并列可见</span></div>
+            <div class="numbered-point"><b>02</b><span>帧级多轨编辑与镜头 Inspector 联动</span></div>
+            <div class="numbered-point"><b>03</b><span>质量门、引擎选择与 MP4 导出处于同一工作流</span></div>
+          </div>
+        </div>
+        <figure class="image-frame" style="margin:0">
+          <img src="picut-slides-assets/studio-final-ui.png" alt="πCut 编辑工作台，包含 Director、画布、Inspector 和时间线" />
+          <figcaption class="image-caption">真实项目截图 · Transformer 60 秒项目</figcaption>
+        </figure>
+      </div>
+      <footer class="slide-foot"><strong>一个界面承载 Observe → Tool → Validate → Deliver</strong><span>04</span></footer>
+    </section>
+
+    <section class="slide" data-title="Agent 是原生运行时，不是包装器">
+      <header class="slide-head">
+        <div class="brand"><span class="brand-mark">π</span><span>πCut</span></div>
+        <span class="section-id">AGENT · NATIVE PI RUNTIME</span>
+      </header>
+      <div class="slide-main agent-layout">
+        <figure class="image-frame" style="margin:0">
+          <img src="picut-slides-assets/pi-agent-creation-trace.png" alt="Pi Agent 创建折纸视频并显示 draft_storyboard 工具轨迹" />
+          <figcaption class="image-caption">创建画布：强制先 draft_storyboard，再进入结构化编辑</figcaption>
+        </figure>
+        <div class="fact-stack">
+          <div>
+            <div class="eyebrow">原生内核</div>
+            <h2 class="title-lg" style="font-size:49px;margin-top:12px">Agent 是运行时，<br />不是一层包装器。</h2>
+          </div>
+          <div class="fact"><div class="big">0.84.2</div><div><h3>完整 AgentSession</h3><p>复用 Pi 的设置、认证、项目指令、扩展、重试与 compaction。</p></div></div>
+          <div class="fact"><div class="big">14</div><div><h3>视频领域工具</h3><p>与原生 coding tools 同时可用；不靠关键词 planner 或正则补丁伪装 Agent 行为。</p></div></div>
+          <div class="fact"><div class="big">23</div><div><h3>技能资源加载通过</h3><p>本地技能与项目上下文进入同一个 ResourceLoader，诊断为 0。</p></div></div>
+          <div class="tag-row"><span class="tag">openai-codex / gpt-5.5</span><span class="tag">medium reasoning</span></div>
+        </div>
+      </div>
+      <footer class="slide-foot"><strong>Pi 负责“怎么做”；πCut 约束“修改必须如何落地”</strong><span>05</span></footer>
+    </section>
+
+    <section class="slide" data-title="VideoSpec 是唯一事实源">
+      <header class="slide-head">
+        <div class="brand"><span class="brand-mark">π</span><span>πCut</span></div>
+        <span class="section-id">STATE · ONE SOURCE OF TRUTH</span>
+      </header>
+      <div class="slide-main spec-layout">
+        <div class="code-panel" aria-label="VideoSpec 示例">
+          {<br />
+          &nbsp;&nbsp;<span class="key">"projectId"</span>: <span class="str">"transformer-60s"</span>,<br />
+          &nbsp;&nbsp;<span class="key">"revision"</span>: <span class="val">52</span>,<br />
+          &nbsp;&nbsp;<span class="key">"scenes"</span>: [<br />
+          &nbsp;&nbsp;&nbsp;&nbsp;{ <span class="key">"component"</span>: <span class="str">"DynamicChart"</span>,<br />
+          &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="key">"durationFrames"</span>: <span class="val">300</span> }<br />
+          &nbsp;&nbsp;],<br />
+          &nbsp;&nbsp;<span class="key">"tracks"</span>: [<span class="str">"video"</span>, <span class="str">"caption"</span>, <span class="str">"narration"</span>],<br />
+          &nbsp;&nbsp;<span class="key">"engine"</span>: <span class="str">"auto"</span><br />
+          }
+        </div>
+        <div class="truth-map">
+          <div>
+            <div class="eyebrow">状态设计</div>
+            <h2 class="title-lg" style="font-size:54px;margin-top:12px">VideoSpec 是唯一事实源</h2>
+            <p class="lede" style="font-size:20px;margin-top:18px">不是“聊天记录 + 一坨不可逆结果”，而是一份可校验、可版本化、可编译的视频描述。</p>
+          </div>
+          <div class="truth-core"><h3>一次修改，四处一致</h3><p>UI 与 Agent 的动作都提交 ChangeSet，随后由同一 revision 驱动画布、时间线、Inspector 与渲染器。</p></div>
+          <div class="truth-output">
+            <div class="output-line">Canvas<span>画面与播放头</span></div>
+            <div class="output-line">Timeline<span>轨道、时长、分割</span></div>
+            <div class="output-line">Inspector<span>Scene / Style / Motion</span></div>
+            <div class="output-line">Renderer<span>同源双引擎消费</span></div>
+          </div>
+          <div class="cycle"><b>UI → VideoSpec → Agent</b><span>／</span><b>Agent → Tools → VideoSpec → UI</b></div>
+        </div>
+      </div>
+      <footer class="slide-foot"><strong>版本、修订与 ChangeSet 让人机协作有共同语境</strong><span>06</span></footer>
+    </section>
+
+    <section class="slide" data-title="人和 Agent 编辑的是同一条时间线">
+      <header class="slide-head">
+        <div class="brand"><span class="brand-mark">π</span><span>πCut</span></div>
+        <span class="section-id">COLLABORATION · SHARED WORKSPACE</span>
+      </header>
+      <div class="slide-main collab-layout">
+        <figure class="image-frame" style="margin:0">
+          <img src="picut-slides-assets/checkpoint-split-operation.png" alt="πCut 执行时间线分割操作，左侧显示可追踪 ChangeSet" />
+          <figcaption class="image-caption">帧级分割后，左侧立即出现 UI → VideoSpec → Agent 变更回执</figcaption>
+        </figure>
+        <div class="collab-rail">
+          <div>
+            <div class="eyebrow">Human + Agent</div>
+            <h2 class="title-lg" style="font-size:47px;margin-top:12px">编辑的是<br />同一条时间线</h2>
+          </div>
+          <div class="rail-item"><b>01 · HUMAN EDIT</b><h3>直接操作</h3><p>选中、移动、裁切、分割、复制、删除、关键帧、特效与转场。</p></div>
+          <div class="rail-item"><b>02 · CHANGESET</b><h3>结构化提交</h3><p>每次 UI 修改进入新版 VideoSpec，并形成可追踪修订。</p></div>
+          <div class="rail-item"><b>03 · AGENT CONTEXT</b><h3>共享上下文</h3><p>选中 scene、播放头、Inspector tab/field 与 revision 一起注入 Agent。</p></div>
+        </div>
+      </div>
+      <footer class="slide-foot"><strong>人负责精确手感；Agent 负责跨镜头理解与批量决策</strong><span>07</span></footer>
+    </section>
+
+    <section class="slide" data-title="会话、任务与修订都能恢复">
+      <header class="slide-head">
+        <div class="brand"><span class="brand-mark">π</span><span>πCut</span></div>
+        <span class="section-id">DURABILITY · JOBS & SESSIONS</span>
+      </header>
+      <div class="slide-main durable-layout">
+        <figure class="image-frame" style="margin:0">
+          <img src="picut-slides-assets/checkpoint-persistent-sessions.png" alt="πCut 项目会话列表和持久工作台" />
+          <figcaption class="image-caption">项目会话：VideoSpec、聊天、Pi session、runs、changes、assets/output 一起持久化</figcaption>
+        </figure>
+        <div class="sequence">
+          <div style="margin-bottom:24px"><div class="eyebrow">后台任务模型</div><h2 class="title-lg" style="font-size:47px;margin-top:12px">离开页面，<br />任务仍然继续。</h2></div>
+          <div class="sequence-step"><div class="dot">202</div><div><h3>立即返回 jobId</h3><p>长任务不再绑定单次 HTTP 请求生命周期。</p></div></div>
+          <div class="sequence-step"><div class="dot">SSE</div><div><h3>流式观察过程</h3><p>工具调用、状态变化与完成结果通过事件流回传。</p></div></div>
+          <div class="sequence-step"><div class="dot">FS</div><div><h3>原子持久化与恢复</h3><p>会话、转录与 VideoSpec 可恢复；按项目排队并幂等写入。</p></div></div>
+          <div class="sequence-step"><div class="dot">↻</div><div><h3>失败可重试</h3><p>job detail / retry API 让失败是状态，而不是丢失。</p></div></div>
+        </div>
+      </div>
+      <footer class="slide-foot"><strong>Agent Job 是可观察、可恢复、可重试的后台执行单元</strong><span>08</span></footer>
+    </section>
+
+    <section class="slide" data-title="同一份 VideoSpec，两个独立引擎" data-theme="coral">
+      <header class="slide-head">
+        <div class="brand"><span class="brand-mark">π</span><span>πCut</span></div>
+        <span class="section-id">RENDER · DUAL ENGINE PARITY</span>
+      </header>
+      <div class="slide-main">
+        <div style="display:flex;justify-content:space-between;align-items:end;margin-bottom:28px">
+          <div><div class="eyebrow coral">渲染策略</div><h2 class="title-lg" style="font-size:54px;margin-top:10px">同一份 VideoSpec，两个独立引擎</h2></div>
+          <p class="small" style="max-width:430px;text-align:right">不是给两个引擎分别写两套内容，而是让统一描述被不同 adapter 确定性消费。</p>
+        </div>
+        <div class="dual-layout" style="position:relative">
+          <article class="engine"><div class="engine-head"><h3>Remotion</h3><span>FRAME-ACCURATE</span></div><img src="picut-slides-assets/remotion-contact-sheet.png" alt="Remotion 渲染的六个 Transformer 场景" /><p>适合组件化、帧级可控、工程化程度高的解释型画面。</p></article>
+          <div class="same-source">ONE<br />VIDEOSPEC</div>
+          <article class="engine hyper"><div class="engine-head"><h3>HyperFrames</h3><span>VISUAL-FIRST</span></div><img src="picut-slides-assets/hyperframes-contact-sheet.png" alt="HyperFrames 渲染的六个 Transformer 场景" /><p>适合视觉优先与高风格化镜头，并保留回退到 Remotion 的路径。</p></article>
+        </div>
+        <div class="stat-row" style="margin-top:31px">
+          <div class="stat"><strong>5</strong><span>核心场景组件</span></div>
+          <div class="stat"><strong>2</strong><span>独立渲染 adapter</span></div>
+          <div class="stat"><strong>30</strong><span>fps 确定性时间基</span></div>
+          <div class="stat"><strong>1</strong><span>统一 VideoSpec</span></div>
+          <div class="stat"><strong>∞</strong><span>可扩展组件组合</span></div>
+        </div>
+      </div>
+      <footer class="slide-foot"><strong>双引擎的价值：能力互补、可比较、可回退</strong><span>09</span></footer>
+    </section>
+
+    <section class="slide" data-title="路由不是黑盒：选择、置信度、原因、回退">
+      <header class="slide-head">
+        <div class="brand"><span class="brand-mark">π</span><span>πCut</span></div>
+        <span class="section-id">ROUTER · EXPLAINABLE DECISION</span>
+      </header>
+      <div class="slide-main route-layout">
+        <figure class="image-frame" style="margin:0">
+          <img src="picut-slides-assets/pi-agent-auto-route-hyperframes.png" alt="πCut 自动路由选择 HyperFrames 并显示回退引擎" />
+          <figcaption class="image-caption">真实 Agent 轨迹：HyperFrames 77% · fallback Remotion</figcaption>
+        </figure>
+        <div class="route-score">
+          <div><div class="eyebrow coral">可解释路由</div><h2 class="title-lg" style="font-size:46px;margin-top:12px">选择、置信度、<br />原因、回退</h2></div>
+          <div style="display:grid;grid-template-columns:230px 1fr;gap:24px;align-items:center">
+            <div class="score-ring"><strong>77%</strong></div>
+            <div class="score-copy"><h3>HyperFrames</h3><p>路由分数不是只给界面看；它与原因、fallback 一起进入 trace 与 RenderManifest。</p></div>
+          </div>
+          <div class="trace-list">
+            <div class="trace-item"><code>score</code><span>依据场景组件、视觉诉求与 adapter 能力计算</span></div>
+            <div class="trace-item"><code>reasons</code><span>解释为何命中当前引擎</span></div>
+            <div class="trace-item"><code>fallback</code><span>主引擎失败时保持可交付路径</span></div>
+          </div>
+        </div>
+      </div>
+      <footer class="slide-foot"><strong>自动化可以做决定，但决定必须留下证据</strong><span>10</span></footer>
+    </section>
+
+    <section class="slide" data-title="交付不是一个 MP4，而是一组可验证证据">
+      <header class="slide-head">
+        <div class="brand"><span class="brand-mark">π</span><span>πCut</span></div>
+        <span class="section-id">QUALITY · G1—G7 & DELIVERY</span>
+      </header>
+      <div class="slide-main quality-layout">
+        <div>
+          <div class="eyebrow">质量体系</div>
+          <h2 class="title-lg" style="font-size:53px;margin-top:12px">交付不是一个 MP4，<br />而是一组可验证证据</h2>
+          <div class="gate-rail" aria-label="七个质量门">
+            <div class="gate"><b>G1</b><span>Schema<br />结构校验</span></div>
+            <div class="gate"><b>G2</b><span>镜头与引用<br />完整性</span></div>
+            <div class="gate"><b>G3</b><span>时间轴与<br />边界</span></div>
+            <div class="gate"><b>G4</b><span>资产<br />可用性</span></div>
+            <div class="gate"><b>G5</b><span>组件与<br />构建契约</span></div>
+            <div class="gate warn"><b>G6</b><span>视听同步<br />提醒</span></div>
+            <div class="gate"><b>G7</b><span>交付<br />完整性</span></div>
+          </div>
+          <div class="meta-label" style="margin-bottom:11px">Delivery set</div>
+          <div class="deliverables">
+            <div class="deliverable">MP4</div><div class="deliverable">SRT</div><div class="deliverable">VideoSpec</div><div class="deliverable">AssetManifest</div><div class="deliverable">RenderManifest</div>
+          </div>
+        </div>
+        <aside class="quality-aside">
+          <div class="big">SHA-256</div>
+          <h3>完整性不是口号</h3>
+          <p>交付清单锁定 revision、digest、引擎路由与资产来源；同一产物可以被验证，而不是只能“相信这次导出”。</p>
+          <div class="tag-row" style="margin-top:22px"><span class="tag">来源可追踪</span><span class="tag">修订可定位</span><span class="tag">结果可校验</span></div>
+        </aside>
+      </div>
+      <footer class="slide-foot"><strong>质量门把“看起来可以”变成“满足交付契约”</strong><span>11</span></footer>
+    </section>
+
+    <section class="slide" data-title="当前边界：原型已闭环，产品化仍有明确工作">
+      <header class="slide-head">
+        <div class="brand"><span class="brand-mark">π</span><span>πCut</span></div>
+        <span class="section-id">STATUS · HONEST BOUNDARY</span>
+      </header>
+      <div class="slide-main">
+        <div class="eyebrow">项目判断</div>
+        <h2 class="title-lg" style="margin-top:12px">原型已闭环，产品化仍有明确工作</h2>
+        <p class="lede" style="font-size:21px;margin-top:18px">这里区分“系统能力已经证明”与“公网产品已经承诺”，避免把本地完整度误读为生产就绪度。</p>
+        <div class="boundary-layout" style="margin-top:52px">
+          <section class="boundary-col">
+            <h3>已经证明</h3>
+            <div class="boundary-list">
+              <div class="boundary-item"><b>✓</b><span>原生 Pi AgentSession 可驱动完整视频编辑循环<small>观察、工具、校验、修订、导出</small></span></div>
+              <div class="boundary-item"><b>✓</b><span>VideoSpec 能同时支撑 Agent、UI 与双引擎<small>同源状态、帧级时间线、Inspector 消费</small></span></div>
+              <div class="boundary-item"><b>✓</b><span>质量与交付证据已经进入系统设计<small>G1—G7、清单、digest、来源追踪</small></span></div>
+            </div>
+          </section>
+          <section class="boundary-col open">
+            <h3>产品化待完成</h3>
+            <div class="boundary-list">
+              <div class="boundary-item"><b>→</b><span>当前仍是 local-first 运行模型<small>公网多用户需要认证、隔离、托管存储与队列策略</small></span></div>
+              <div class="boundary-item"><b>→</b><span>部分媒体与语音能力依赖外部服务<small>NASA / NOAA / Wikimedia；SiliconFlow TTS 为可选项</small></span></div>
+              <div class="boundary-item"><b>→</b><span>仓库尚未声明 License<small>开放范围与商业使用边界需要明确</small></span></div>
+            </div>
+          </section>
+        </div>
+      </div>
+      <footer class="slide-foot"><strong>下一阶段不是重做核心，而是把闭环工程化为可运营产品</strong><span>12</span></footer>
+    </section>
+
+    <section class="slide" data-title="把生成，变成工程" data-theme="image">
+      <img class="hero-bg" style="inset:0 0 0 52%;width:48%;opacity:.72;object-position:center" src="picut-slides-assets/pi-agent-generated-hydrothermal-vent.png" alt="πCut 生成的深海热液喷口视频画面" />
+      <header class="slide-head">
+        <div class="brand"><span class="brand-mark">π</span><span>πCut</span></div>
+        <span class="section-id">CLOSE · THE TAKEAWAY</span>
+      </header>
+      <div class="slide-main closing-main">
+        <div>
+          <div class="eyebrow">一句话总结</div>
+          <h2 class="closing-title" style="margin-top:20px">把生成，<br /><span class="outline">变成工程。</span></h2>
+          <p class="lede" style="margin-top:30px">πCut 的价值，不只是让 Agent 做视频；而是让创作过程有状态、让自动决策有证据、让最终交付可复现。</p>
+        </div>
+        <div class="closing-points">
+          <div class="closing-point"><b>01 · AGENT</b><span>原生 Pi 负责高层创作与工具编排</span></div>
+          <div class="closing-point"><b>02 · SPEC</b><span>VideoSpec 连接人、Agent、时间线与渲染</span></div>
+          <div class="closing-point"><b>03 · DELIVERY</b><span>双引擎 + G1—G7 把结果变成可验证产物</span></div>
+          <div class="tag-row" style="margin-top:8px"><span class="tag">下一步：用真实 brief 验证公网工作流</span></div>
+        </div>
+      </div>
+      <footer class="slide-foot"><strong>πCut · Agentic Video Compiler</strong><span>13</span></footer>
+    </section>
+  </main>
+
+  <nav id="controls" aria-label="演示文稿导航">
+    <button class="control-btn" id="prev" type="button" aria-label="上一页" title="上一页（←）">←</button>
+    <span id="counter" aria-label="当前页码">01 / 13</span>
+    <button class="control-btn" id="next" type="button" aria-label="下一页" title="下一页（→ / Space）">→</button>
+    <button class="control-btn" id="overviewBtn" type="button" aria-label="打开总览" title="总览（O）">▦</button>
+    <button class="control-btn" id="fullscreenBtn" type="button" aria-label="全屏" title="全屏（F）">⛶</button>
+  </nav>
+  <div id="progress" aria-hidden="true"><span></span></div>
+  <div id="help">← → 翻页 · O 总览 · F 全屏 · Home / End</div>
+  <aside id="overview" aria-hidden="true">
+    <div class="overview-head"><div><p class="eyebrow">πCut 项目汇报</p><h2>页面总览</h2></div><p>点击任一页继续演示 · Esc 关闭</p></div>
+    <div class="overview-grid"></div>
+  </aside>
+
+  <script>
+    (() => {
+      const slides = [...document.querySelectorAll('.slide')];
+      const stage = document.getElementById('stage');
+      const counter = document.getElementById('counter');
+      const progress = document.querySelector('#progress > span');
+      const overview = document.getElementById('overview');
+      const overviewGrid = document.querySelector('.overview-grid');
+      let current = Math.max(0, Math.min(slides.length - 1, Number(location.hash.replace('#/', '')) - 1 || 0));
+      let touchStartX = null;
+
+      function fit() {
+        const scale = Math.min(innerWidth / 1600, innerHeight / 900);
+        document.documentElement.style.setProperty('--stage-scale', scale.toFixed(5));
+      }
+
+      function show(index, pushHash = true) {
+        current = Math.max(0, Math.min(slides.length - 1, index));
+        slides.forEach((slide, i) => {
+          slide.classList.toggle('active', i === current);
+          slide.classList.toggle('before', i < current);
+          slide.setAttribute('aria-hidden', i === current ? 'false' : 'true');
+        });
+        counter.textContent = `${String(current + 1).padStart(2, '0')} / ${String(slides.length).padStart(2, '0')}`;
+        progress.style.width = `${((current + 1) / slides.length) * 100}%`;
+        document.title = `${slides[current].dataset.title}｜πCut 项目汇报`;
+        if (pushHash) history.replaceState(null, '', `#/${current + 1}`);
+      }
+
+      function move(delta) { show(current + delta); }
+
+      function toggleOverview(force) {
+        const open = typeof force === 'boolean' ? force : !overview.classList.contains('open');
+        overview.classList.toggle('open', open);
+        overview.setAttribute('aria-hidden', open ? 'false' : 'true');
+        if (open) overview.querySelector(`[data-index="${current}"]`)?.focus();
+      }
+
+      slides.forEach((slide, i) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'overview-card';
+        button.dataset.index = i;
+        button.innerHTML = `<b>${String(i + 1).padStart(2, '0')} / ${String(slides.length).padStart(2, '0')}</b><span>${slide.dataset.title}</span>`;
+        button.addEventListener('click', () => { show(i); toggleOverview(false); });
+        overviewGrid.appendChild(button);
+      });
+
+      document.getElementById('prev').addEventListener('click', () => move(-1));
+      document.getElementById('next').addEventListener('click', () => move(1));
+      document.getElementById('overviewBtn').addEventListener('click', () => toggleOverview());
+      document.getElementById('fullscreenBtn').addEventListener('click', async () => {
+        if (!document.fullscreenElement) await document.documentElement.requestFullscreen?.();
+        else await document.exitFullscreen?.();
+      });
+
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && overview.classList.contains('open')) { toggleOverview(false); return; }
+        if (overview.classList.contains('open')) return;
+        if (['ArrowRight', 'PageDown', ' ', 'Enter'].includes(event.key)) { event.preventDefault(); move(1); }
+        if (['ArrowLeft', 'PageUp', 'Backspace'].includes(event.key)) { event.preventDefault(); move(-1); }
+        if (event.key === 'Home') { event.preventDefault(); show(0); }
+        if (event.key === 'End') { event.preventDefault(); show(slides.length - 1); }
+        if (event.key.toLowerCase() === 'o') toggleOverview();
+        if (event.key.toLowerCase() === 'f') document.getElementById('fullscreenBtn').click();
+      });
+
+      stage.addEventListener('click', (event) => {
+        if (event.target.closest('button, a')) return;
+        const x = event.clientX / innerWidth;
+        if (x < .18) move(-1);
+        if (x > .82) move(1);
+      });
+
+      stage.addEventListener('touchstart', event => { touchStartX = event.changedTouches[0].clientX; }, {passive:true});
+      stage.addEventListener('touchend', event => {
+        if (touchStartX == null) return;
+        const delta = event.changedTouches[0].clientX - touchStartX;
+        if (Math.abs(delta) > 48) move(delta < 0 ? 1 : -1);
+        touchStartX = null;
+      }, {passive:true});
+
+      addEventListener('resize', fit);
+      addEventListener('hashchange', () => show(Number(location.hash.replace('#/', '')) - 1 || 0, false));
+      fit();
+      show(current, false);
+    })();
+  </script>
+</body>
+</html>

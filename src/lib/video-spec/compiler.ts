@@ -1,4 +1,4 @@
-import type {VideoSpec} from './schema';
+import {componentPropsSchemas, type VideoSpec} from './schema';
 
 export interface CompiledScene {
   id: string;
@@ -36,24 +36,27 @@ export function compileVideoSpec(spec: VideoSpec): CompiledVideo {
       return Boolean(track?.visible && (!soloTracks.size || soloTracks.has(scene.trackId)));
     })
     .sort((a, b) => (trackById.get(b.trackId)?.order ?? 0) - (trackById.get(a.trackId)?.order ?? 0) || a.startFrame - b.startFrame)
-    .map((scene, index) => ({
-      id: scene.id,
-      index,
-      startFrame: scene.startFrame,
-      endFrame: scene.startFrame + scene.durationFrames,
-      durationFrames: scene.durationFrames,
-      startMs: Math.round((scene.startFrame / spec.canvas.fps) * 1000),
-      durationMs: Math.round((scene.durationFrames / spec.canvas.fps) * 1000),
-      component: scene.component,
-      props: {...scene.props, transparentBackground: trackById.get(scene.trackId)?.kind === 'overlay', transitionIn: scene.transition.in, transitionOut: scene.transition.out},
-      narration: storyById.get(scene.id)?.narration ?? '',
-      trackId: scene.trackId,
-      transform: scene.transform,
-      effects: scene.effects,
-      keyframes: scene.keyframes,
-      transition: scene.transition,
-      playbackRate: scene.playbackRate,
-    }));
+    .map((scene, index) => {
+      const normalizedProps = componentPropsSchemas[scene.component].safeParse(scene.props);
+      return {
+        id: scene.id,
+        index,
+        startFrame: scene.startFrame,
+        endFrame: scene.startFrame + scene.durationFrames,
+        durationFrames: scene.durationFrames,
+        startMs: Math.round((scene.startFrame / spec.canvas.fps) * 1000),
+        durationMs: Math.round((scene.durationFrames / spec.canvas.fps) * 1000),
+        component: scene.component,
+        props: {...(normalizedProps.success ? normalizedProps.data : scene.props), transparentBackground: trackById.get(scene.trackId)?.kind === 'overlay', transitionIn: scene.transition.in, transitionOut: scene.transition.out},
+        narration: storyById.get(scene.id)?.narration ?? '',
+        trackId: scene.trackId,
+        transform: scene.transform,
+        effects: scene.effects,
+        keyframes: scene.keyframes,
+        transition: scene.transition,
+        playbackRate: scene.playbackRate,
+      };
+    });
   const durationInFrames = spec.editSpec.scenes.reduce((max, scene) => Math.max(max, scene.startFrame + scene.durationFrames), 1);
   return {
     spec,

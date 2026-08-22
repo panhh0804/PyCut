@@ -41,11 +41,75 @@ const componentType = Type.Union([
   Type.Literal('DynamicChart'),
   Type.Literal('CaptionKaraoke'),
   Type.Literal('MediaBroll'),
+  Type.Literal('SceneCanvas'),
 ]);
 
 const visualPlanType = Type.Union([
   Type.Literal('hero'), Type.Literal('split'), Type.Literal('chart'), Type.Literal('caption'), Type.Literal('media'),
+  Type.Literal('canvas'),
 ]);
+
+const hexColorType = Type.String({pattern: '^#[0-9a-fA-F]{6}$'});
+const canvasLayerType = Type.Object({
+  id: Type.String({pattern: '^[a-zA-Z0-9-_]+$', minLength: 1, maxLength: 80}),
+  type: Type.Union([
+    Type.Literal('text'), Type.Literal('badge'), Type.Literal('metric'), Type.Literal('formula'), Type.Literal('code'),
+    Type.Literal('shape'), Type.Literal('line'), Type.Literal('chart'), Type.Literal('image'), Type.Literal('particles'),
+  ]),
+  x: Type.Number({minimum: -100, maximum: 200, description: '相对画布百分比；允许负值和超过100以创建安全出血与画外入场'}),
+  y: Type.Number({minimum: -100, maximum: 200, description: '相对画布百分比；允许负值和超过100以创建安全出血与画外入场'}),
+  width: Type.Number({minimum: 0.1, maximum: 200}),
+  height: Type.Number({minimum: 0.1, maximum: 200}),
+  zIndex: Type.Optional(Type.Integer({minimum: 0, maximum: 100})),
+  content: Type.Optional(Type.String({maxLength: 2_000})),
+  assetId: Type.Optional(Type.String({minLength: 1, maxLength: 160})),
+  labels: Type.Optional(Type.Array(Type.String({maxLength: 48}), {maxItems: 12})),
+  values: Type.Optional(Type.Array(Type.Number(), {maxItems: 12})),
+  style: Type.Optional(Type.Object({
+    color: Type.Optional(hexColorType),
+    backgroundColor: Type.Optional(hexColorType),
+    borderColor: Type.Optional(hexColorType),
+    fontSize: Type.Optional(Type.Number({minimum: 10, maximum: 240})),
+    fontWeight: Type.Optional(Type.Integer({minimum: 100, maximum: 950})),
+    lineHeight: Type.Optional(Type.Number({minimum: 0.7, maximum: 2.5})),
+    letterSpacing: Type.Optional(Type.Number({minimum: -12, maximum: 30})),
+    align: Type.Optional(Type.Union([Type.Literal('left'), Type.Literal('center'), Type.Literal('right')])),
+    radius: Type.Optional(Type.Number({minimum: 0, maximum: 240})),
+    padding: Type.Optional(Type.Number({minimum: 0, maximum: 120})),
+    borderWidth: Type.Optional(Type.Number({minimum: 0, maximum: 16})),
+    opacity: Type.Optional(Type.Number({minimum: 0, maximum: 1})),
+    rotation: Type.Optional(Type.Number({minimum: -360, maximum: 360})),
+    shadow: Type.Optional(Type.Number({minimum: 0, maximum: 120})),
+    blur: Type.Optional(Type.Number({minimum: 0, maximum: 60})),
+  })),
+  motion: Type.Optional(Type.Object({
+    preset: Type.Union([
+      Type.Literal('none'), Type.Literal('fade'), Type.Literal('rise'), Type.Literal('slide-left'), Type.Literal('slide-right'),
+      Type.Literal('scale'), Type.Literal('reveal'), Type.Literal('float'), Type.Literal('pulse'), Type.Literal('count'), Type.Literal('draw'),
+    ]),
+    delayFrames: Type.Optional(Type.Integer({minimum: 0, maximum: 5_400})),
+    durationFrames: Type.Optional(Type.Integer({minimum: 1, maximum: 1_800})),
+    intensity: Type.Optional(Type.Number({minimum: 0, maximum: 4})),
+  })),
+});
+
+const canvasDesignType = Type.Object({
+  background: Type.Object({
+    type: Type.Union([Type.Literal('solid'), Type.Literal('linear'), Type.Literal('radial')]),
+    colors: Type.Array(hexColorType, {minItems: 1, maxItems: 4}),
+    angle: Type.Optional(Type.Number({minimum: -360, maximum: 360})),
+    focalX: Type.Optional(Type.Number({minimum: 0, maximum: 100})),
+    focalY: Type.Optional(Type.Number({minimum: 0, maximum: 100})),
+  }),
+  texture: Type.Optional(Type.Union([Type.Literal('none'), Type.Literal('grid'), Type.Literal('dots'), Type.Literal('scanlines')])),
+  camera: Type.Optional(Type.Object({
+    startScale: Type.Optional(Type.Number({minimum: 0.5, maximum: 2})),
+    endScale: Type.Optional(Type.Number({minimum: 0.5, maximum: 2})),
+    panX: Type.Optional(Type.Number({minimum: -30, maximum: 30})),
+    panY: Type.Optional(Type.Number({minimum: -30, maximum: 30})),
+  })),
+  layers: Type.Array(canvasLayerType, {minItems: 1, maxItems: 40}),
+});
 
 function textResult(text: string, details?: unknown) {
   return {content: [{type: 'text' as const, text}], details};
@@ -141,8 +205,8 @@ export function createVideoTools(projectId: string, directUserPrompt: string, ed
   const draftStoryboard = defineTool({
     name: 'draft_storyboard',
     label: '从零生成分镜',
-    description: '为当前新会话从零生成完整 StorySpec 与 EditSpec。不得复用示例内容。',
-    promptSnippet: '从用户 brief 生成完整、可渲染的新视频分镜',
+    description: '为当前新会话从零生成完整 StorySpec 与 EditSpec。优先用 visualType=canvas + canvas.layers 设计每幕独特的自由构图、排版、图形、公式、代码、图表、粒子和分层运动；预制 hero/split/chart/caption 只在确实合适时使用。不得复用示例内容或机械重复同一种卡片布局。需要实拍素材的镜头填写 mediaQuery，随后调用 search_media。',
+    promptSnippet: '从 brief 生成原创视频；自由 SceneCanvas 是默认表达，预制组件仅是可选积木',
     parameters: Type.Object({
       title: Type.String({minLength: 2, maxLength: 80}),
       logline: Type.String({minLength: 4, maxLength: 240}),
@@ -152,6 +216,12 @@ export function createVideoTools(projectId: string, directUserPrompt: string, ed
         Type.Literal('editorial'), Type.Literal('science'), Type.Literal('nature'),
         Type.Literal('warm'), Type.Literal('neon'), Type.Literal('minimal'),
       ]),
+      style: Type.Optional(Type.Object({
+        background: Type.Optional(hexColorType), surface: Type.Optional(hexColorType), primary: Type.Optional(hexColorType),
+        accent: Type.Optional(hexColorType), text: Type.Optional(hexColorType), muted: Type.Optional(hexColorType),
+        fontFamily: Type.Optional(Type.String({minLength: 1, maxLength: 180})),
+        radius: Type.Optional(Type.Number({minimum: 0, maximum: 96})),
+      })),
       scenes: Type.Array(Type.Object({
         purpose: Type.String({minLength: 2, maxLength: 180}),
         narration: Type.String({minLength: 1, maxLength: 500}),
@@ -170,6 +240,7 @@ export function createVideoTools(projectId: string, directUserPrompt: string, ed
         chartLabels: Type.Optional(Type.Array(Type.String({minLength: 1, maxLength: 40}), {minItems: 1, maxItems: 12})),
         chartValues: Type.Optional(Type.Array(Type.Number(), {minItems: 1, maxItems: 12})),
         mediaQuery: Type.Optional(Type.String({minLength: 2, maxLength: 180, description: '适合可信素材库的简洁英文搜索词'})),
+        canvas: Type.Optional(canvasDesignType),
         evidenceRefs: Type.Optional(Type.Array(Type.String({minLength: 1, maxLength: 160}), {maxItems: 8})),
         mustShow: Type.Optional(Type.Array(Type.String({minLength: 1, maxLength: 80}), {maxItems: 8})),
         mustAvoid: Type.Optional(Type.Array(Type.String({minLength: 1, maxLength: 120}), {maxItems: 8})),

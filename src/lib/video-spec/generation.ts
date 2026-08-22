@@ -2,7 +2,39 @@ import {createHash} from 'node:crypto';
 import {videoSpecSchema, type EditScene, type StoryScene, type VideoSpec} from './schema';
 import {VIDEO_THEME_PRESETS} from './themes';
 
-export type AgentVisualType = 'hero' | 'split' | 'chart' | 'caption' | 'media';
+export type AgentVisualType = 'canvas' | 'hero' | 'split' | 'chart' | 'caption' | 'media';
+
+export interface AgentCanvasLayer {
+  id: string;
+  type: 'text' | 'badge' | 'metric' | 'formula' | 'code' | 'shape' | 'line' | 'chart' | 'image' | 'particles';
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  zIndex?: number;
+  content?: string;
+  assetId?: string;
+  labels?: string[];
+  values?: number[];
+  style?: {
+    color?: string; backgroundColor?: string; borderColor?: string; fontSize?: number; fontWeight?: number;
+    lineHeight?: number; letterSpacing?: number; align?: 'left' | 'center' | 'right'; radius?: number;
+    padding?: number; borderWidth?: number; opacity?: number; rotation?: number; shadow?: number; blur?: number;
+  };
+  motion?: {
+    preset: 'none' | 'fade' | 'rise' | 'slide-left' | 'slide-right' | 'scale' | 'reveal' | 'float' | 'pulse' | 'count' | 'draw';
+    delayFrames?: number;
+    durationFrames?: number;
+    intensity?: number;
+  };
+}
+
+export interface AgentCanvasDesign {
+  background: {type: 'solid' | 'linear' | 'radial'; colors: string[]; angle?: number; focalX?: number; focalY?: number};
+  texture?: 'none' | 'grid' | 'dots' | 'scanlines';
+  camera?: {startScale?: number; endScale?: number; panX?: number; panY?: number};
+  layers: AgentCanvasLayer[];
+}
 
 export interface AgentScenePlan {
   purpose: string;
@@ -22,6 +54,7 @@ export interface AgentScenePlan {
   chartLabels?: string[];
   chartValues?: number[];
   mediaQuery?: string;
+  canvas?: AgentCanvasDesign;
   evidenceRefs?: string[];
   mustShow?: string[];
   mustAvoid?: string[];
@@ -33,6 +66,10 @@ export interface AgentVideoPlan {
   audience: string;
   durationSeconds: number;
   theme: 'editorial' | 'science' | 'nature' | 'warm' | 'neon' | 'minimal';
+  style?: {
+    background?: string; surface?: string; primary?: string; accent?: string; text?: string; muted?: string;
+    fontFamily?: string; radius?: number;
+  };
   scenes: AgentScenePlan[];
 }
 
@@ -74,6 +111,37 @@ function safeText(value: string | undefined, fallback: string) {
 
 function componentFor(scene: AgentScenePlan, accentColor: string): Pick<EditScene, 'component' | 'props'> {
   const tags = (scene.tags ?? []).filter(Boolean).slice(0, 8);
+  if (scene.canvas?.layers.length) {
+    return {
+      component: 'SceneCanvas',
+      props: {
+        background: scene.canvas.background,
+        texture: scene.canvas.texture ?? 'none',
+        camera: scene.canvas.camera ?? {startScale: 1, endScale: 1, panX: 0, panY: 0},
+        layers: scene.canvas.layers,
+        mediaQuery: scene.mediaQuery,
+        accentColor,
+      },
+    };
+  }
+  if (scene.visualType === 'canvas') {
+    return {
+      component: 'SceneCanvas',
+      props: {
+        background: {type: 'radial', colors: ['#071522', '#102A3D'], focalX: 72, focalY: 28, angle: 135},
+        texture: 'grid',
+        camera: {startScale: 1, endScale: 1.035, panX: -1.5, panY: 0.8},
+        layers: [
+          {id: 'kicker', type: 'badge', x: 7, y: 10, width: 30, height: 7, content: scene.kicker, style: {color: accentColor, borderColor: accentColor, borderWidth: 1, fontSize: 20, fontWeight: 800, letterSpacing: 3, radius: 18, padding: 12}, motion: {preset: 'slide-right', delayFrames: 0, durationFrames: 16, intensity: 1}},
+          {id: 'headline', type: 'text', x: 7, y: 24, width: 66, height: 34, content: scene.headline, style: {fontSize: 92, fontWeight: 900, lineHeight: 0.96, letterSpacing: -4}, motion: {preset: 'rise', delayFrames: 5, durationFrames: 20, intensity: 1.2}},
+          {id: 'body', type: 'text', x: 8, y: 64, width: 58, height: 18, content: scene.body, style: {fontSize: 30, fontWeight: 500, lineHeight: 1.5}, motion: {preset: 'fade', delayFrames: 14, durationFrames: 18, intensity: 1}},
+          {id: 'orbit', type: 'shape', x: 73, y: 19, width: 20, height: 38, style: {borderColor: accentColor, borderWidth: 2, radius: 180, opacity: 0.72, shadow: 44}, motion: {preset: 'pulse', delayFrames: 8, durationFrames: 28, intensity: 0.8}},
+        ],
+        mediaQuery: scene.mediaQuery,
+        accentColor,
+      },
+    };
+  }
   if (scene.visualType === 'chart') {
     const labels = (scene.chartLabels ?? []).filter(Boolean).slice(0, 12);
     const values = (scene.chartValues ?? []).filter(Number.isFinite).slice(0, 12);
@@ -143,7 +211,8 @@ export function videoSpecFromAgentPlan(projectId: string, brief: string, plan: A
   const targetFrames = Math.max(1, Math.round(durationSeconds * fps));
   if (!plan.scenes.length) throw new Error('π Agent 没有生成任何分镜，已拒绝创建空视频');
   const normalized = normalizedDurations(plan.scenes, targetFrames, fps);
-  const tokens = VIDEO_THEME_PRESETS[plan.theme]?.tokens ?? VIDEO_THEME_PRESETS.editorial.tokens;
+  const baseTokens = VIDEO_THEME_PRESETS[plan.theme]?.tokens ?? VIDEO_THEME_PRESETS.editorial.tokens;
+  const tokens = {...baseTokens, ...Object.fromEntries(Object.entries(plan.style ?? {}).filter(([, value]) => value !== undefined))};
   let startFrame = 0;
   const storyScenes: StoryScene[] = [];
   const editScenes: EditScene[] = [];

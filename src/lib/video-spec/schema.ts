@@ -6,10 +6,83 @@ export const COMPONENT_TYPES = [
   'DynamicChart',
   'CaptionKaraoke',
   'MediaBroll',
+  'SceneCanvas',
 ] as const;
 
 const colorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 const optionalAccent = {accentColor: colorSchema.optional()};
+
+const sceneCanvasLayerSchema = z.object({
+  id: z.string().regex(/^[a-zA-Z0-9-_]+$/),
+  type: z.enum(['text', 'badge', 'metric', 'formula', 'code', 'shape', 'line', 'chart', 'image', 'particles']),
+  x: z.number().min(-100).max(200),
+  y: z.number().min(-100).max(200),
+  width: z.number().min(0.1).max(200),
+  height: z.number().min(0.1).max(200),
+  zIndex: z.number().int().min(0).max(100).default(1),
+  content: z.string().max(2_000).optional(),
+  assetId: z.string().min(1).optional(),
+  labels: z.array(z.string().max(48)).max(12).optional(),
+  values: z.array(z.number().finite()).max(12).optional(),
+  style: z.object({
+    color: colorSchema.optional(),
+    backgroundColor: colorSchema.optional(),
+    borderColor: colorSchema.optional(),
+    fontSize: z.number().min(10).max(240).optional(),
+    fontWeight: z.number().int().min(100).max(950).optional(),
+    lineHeight: z.number().min(0.7).max(2.5).optional(),
+    letterSpacing: z.number().min(-12).max(30).optional(),
+    align: z.enum(['left', 'center', 'right']).optional(),
+    radius: z.number().min(0).max(240).optional(),
+    padding: z.number().min(0).max(120).optional(),
+    borderWidth: z.number().min(0).max(16).optional(),
+    opacity: z.number().min(0).max(1).optional(),
+    rotation: z.number().min(-360).max(360).optional(),
+    shadow: z.number().min(0).max(120).optional(),
+    blur: z.number().min(0).max(60).optional(),
+  }).default({}),
+  motion: z.object({
+    preset: z.enum(['none', 'fade', 'rise', 'slide-left', 'slide-right', 'scale', 'reveal', 'float', 'pulse', 'count', 'draw']),
+    delayFrames: z.number().int().nonnegative().max(5_400).default(0),
+    durationFrames: z.number().int().positive().max(1_800).default(18),
+    intensity: z.number().min(0).max(4).default(1),
+  }).default({preset: 'rise', delayFrames: 0, durationFrames: 18, intensity: 1}),
+}).superRefine((layer, context) => {
+  if (layer.type === 'image' && !layer.assetId) context.addIssue({code: 'custom', path: ['assetId'], message: 'image 图层必须引用 assetId'});
+  if (layer.type === 'chart' && (!layer.labels?.length || layer.labels.length !== layer.values?.length)) {
+    context.addIssue({code: 'custom', path: ['values'], message: 'chart 图层的 labels 与 values 必须存在且数量一致'});
+  }
+});
+
+export const sceneCanvasPropsSchema = z.object({
+  background: z.object({
+    type: z.enum(['solid', 'linear', 'radial']),
+    colors: z.array(colorSchema).min(1).max(4),
+    angle: z.number().min(-360).max(360).default(135),
+    focalX: z.number().min(0).max(100).default(50),
+    focalY: z.number().min(0).max(100).default(50),
+  }),
+  texture: z.enum(['none', 'grid', 'dots', 'scanlines']).default('none'),
+  camera: z.object({
+    startScale: z.number().min(0.5).max(2).default(1),
+    endScale: z.number().min(0.5).max(2).default(1),
+    panX: z.number().min(-30).max(30).default(0),
+    panY: z.number().min(-30).max(30).default(0),
+  }).default({startScale: 1, endScale: 1, panX: 0, panY: 0}),
+  layers: z.array(sceneCanvasLayerSchema).min(1).max(40),
+  mediaQuery: z.string().min(2).max(180).optional(),
+  ...optionalAccent,
+}).superRefine((canvas, context) => {
+  const ids = new Set<string>();
+  canvas.layers.forEach((layer, index) => {
+    if (ids.has(layer.id)) context.addIssue({code: 'custom', path: ['layers', index, 'id'], message: `图层 id 重复：${layer.id}`});
+    ids.add(layer.id);
+    if (['text', 'badge', 'metric', 'formula', 'code', 'chart'].includes(layer.type)
+      && (layer.x < 0 || layer.y < 0 || layer.x + layer.width > 100 || layer.y + layer.height > 100)) {
+      context.addIssue({code: 'custom', path: ['layers', index], message: `${layer.type} 内容图层必须完整位于 0–100% 可视画布内；只有装饰图层可进入出血区`});
+    }
+  });
+});
 
 export const componentPropsSchemas = {
   TextHero: z.object({
@@ -65,6 +138,7 @@ export const componentPropsSchemas = {
     focalY: z.number().min(0).max(100).default(50),
     ...optionalAccent,
   }).passthrough(),
+  SceneCanvas: sceneCanvasPropsSchema,
 } satisfies Record<(typeof COMPONENT_TYPES)[number], z.ZodType>;
 
 export const assetSchema = z.object({
@@ -279,3 +353,4 @@ export type ComponentType = (typeof COMPONENT_TYPES)[number];
 export type NarrationSegment = z.infer<typeof narrationSegmentSchema>;
 export type TtsConfig = z.infer<typeof ttsConfigSchema>;
 export type TimelineTrack = z.infer<typeof timelineTrackSchema>;
+export type SceneCanvasProps = z.infer<typeof sceneCanvasPropsSchema>;

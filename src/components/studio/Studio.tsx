@@ -411,10 +411,39 @@ export function Studio({projectId, sessions, initialMessages, initialAgentRuns, 
 
   const applyTheme = useCallback((theme: VideoThemeName) => {
     const preset = VIDEO_THEME_PRESETS[theme];
+    const scenePatches = spec.editSpec.scenes.flatMap((scene, index): PatchOperation[] => {
+      const accent: PatchOperation = {op: 'replace', path: `/editSpec/scenes/${index}/props/accentColor`, value: preset.tokens.primary};
+      if (scene.component !== 'SceneCanvas') return [accent];
+      const background = scene.props.background as {type?: unknown; colors?: unknown} | undefined;
+      const backgroundType = background?.type === 'solid' || background?.type === 'linear' || background?.type === 'radial' ? background.type : 'linear';
+      const originalColorCount = Array.isArray(background?.colors) ? background.colors.length : 2;
+      const palette = [preset.tokens.background, preset.tokens.surface, preset.tokens.accent, preset.tokens.primary];
+      const layers = Array.isArray(scene.props.layers) ? scene.props.layers : [];
+      const themedLayers = layers.map((raw, layerIndex) => {
+        const layer = raw as {type?: string; style?: Record<string, unknown>};
+        const existing = layer.style ?? {};
+        const decorative = ['shape', 'line', 'particles', 'chart'].includes(layer.type ?? '');
+        const emphasis = layerIndex % 2 ? preset.tokens.accent : preset.tokens.primary;
+        return {
+          ...layer,
+          style: {
+            ...existing,
+            ...(existing.color !== undefined || decorative ? {color: decorative ? emphasis : preset.tokens.text} : {}),
+            ...(existing.backgroundColor !== undefined ? {backgroundColor: layer.type === 'badge' ? preset.tokens.surface : preset.tokens.background} : {}),
+            ...(existing.borderColor !== undefined ? {borderColor: emphasis} : {}),
+          },
+        };
+      });
+      return [
+        accent,
+        {op: 'replace', path: `/editSpec/scenes/${index}/props/background/colors`, value: backgroundType === 'solid' ? [preset.tokens.background] : palette.slice(0, Math.max(2, Math.min(4, originalColorCount)))},
+        {op: 'replace', path: `/editSpec/scenes/${index}/props/layers`, value: themedLayers},
+      ];
+    });
     const patch: PatchOperation[] = [
       {op: 'replace', path: '/style/themeRef', value: `picut-${theme}`},
       {op: 'replace', path: '/style/tokens', value: preset.tokens},
-      ...spec.editSpec.scenes.map((_, index): PatchOperation => ({op: 'replace', path: `/editSpec/scenes/${index}/props/accentColor`, value: preset.tokens.primary})),
+      ...scenePatches,
     ];
     void commitPatch(`将全片色彩主题切换为 ${preset.label}`, patch);
   }, [commitPatch, spec.editSpec.scenes]);
@@ -617,28 +646,7 @@ export function Studio({projectId, sessions, initialMessages, initialAgentRuns, 
     <main className="studio-shell">
       <header className="topbar">
         <div className="brand-lockup"><div className="brand-mark">π</div><div><strong>πCut</strong><span>Agentic Video Compiler</span></div></div>
-        <div className="project-switcher">
-          <button className="project-breadcrumb" type="button" onClick={() => setSessionOpen((value) => !value)} aria-expanded={sessionOpen} aria-haspopup="dialog">
-            <Folders size={15}/><span>Sessions</span><b>/</b><strong>{spec.project.title}</strong><span className="revision-chip">r{spec.revision}</span><ChevronDown size={14}/>
-          </button>
-          {sessionOpen && <div className="session-popover" role="dialog" aria-label="项目会话管理">
-            <div className="session-popover-head"><div><strong>项目会话</strong><span>视频、时间轴和对话均持久化</span></div><span>{sessions.length}</span></div>
-            <div className="session-list">
-              {sessions.map((session) => <div className={`session-item ${session.id === projectId ? 'active' : ''}`} key={session.id}>
-                <button type="button" onClick={() => router.push(`/?project=${encodeURIComponent(session.id)}`)}>
-                  <span className="session-thumb"><MonitorPlay size={15}/></span>
-                  <span><strong>{session.title}</strong><small>{(session.durationMs / 1000).toFixed(0)}s · r{session.revision}{session.hasNarration ? ' · 已配音' : ''}</small></span>
-                </button>
-                <button className="session-action" type="button" onClick={() => void renameSession(session)} aria-label={`重命名 ${session.title}`}><Pencil size={12}/></button>
-                <button className="session-action danger" type="button" onClick={() => void archiveSession(session)} aria-label={`归档 ${session.title}`}><Archive size={12}/></button>
-              </div>)}
-            </div>
-            <form className="session-new" onSubmit={createSession}>
-              <label htmlFor="new-session-brief">新建视频会话</label>
-              <div><input id="new-session-brief" value={newSessionBrief} onChange={(event) => setNewSessionBrief(event.target.value)} placeholder="例如：12 秒云朵科普视频"/><button type="submit" disabled={newSessionBrief.trim().length < 6 || Boolean(busy)}><Plus size={14}/>创建</button></div>
-            </form>
-          </div>}
-        </div>
+        <div className="project-breadcrumb" aria-label="当前项目"><strong>{spec.project.title}</strong><span className="revision-chip">r{spec.revision}</span></div>
         <div className="top-actions">
           <button className="icon-button" type="button" onClick={undo} disabled={Boolean(busy)} aria-label="撤销上一项修改"><RotateCcw size={17} /></button>
           <div className={`quality-pill ${validation.valid ? 'pass' : 'fail'}`}><span /> {validation.valid ? 'G1–G7 Ready' : 'Quality blocked'}</div>
@@ -679,6 +687,27 @@ export function Studio({projectId, sessions, initialMessages, initialAgentRuns, 
             <div><span>{agentWorking ? '后台任务运行中 · 工作台仍可操作' : '⌘ ↵ 运行'}</span><button type="submit" disabled={!prompt.trim() || Boolean(busy) || agentWorking} aria-label="发送指令"><Send size={16}/></button></div>
           </form>
           <div className="suggestions"><button type="button" onClick={() => setPrompt('把第 3 幕的图表改成蓝色，并延长到 12 秒')}>改第 3 幕</button><button type="button" onClick={() => void synthesizeAudio()}>生成旁白</button><button type="button" onClick={() => setPrompt('检查全部质量门并告诉我风险')}>检查质量</button></div>
+          <section className={`chat-sessions ${sessionOpen ? 'open' : ''}`} aria-label="持久化项目会话">
+            <button className="chat-sessions-toggle" type="button" onClick={() => setSessionOpen((value) => !value)} aria-expanded={sessionOpen} aria-controls="chat-session-drawer">
+              <Folders size={15}/><span><strong>Sessions</strong><small>{spec.project.title}</small></span><b>{sessions.length}</b><ChevronDown size={14}/>
+            </button>
+            {sessionOpen ? <div className="chat-session-drawer" id="chat-session-drawer">
+              <div className="session-list">
+                {sessions.map((session) => <div className={`session-item ${session.id === projectId ? 'active' : ''}`} key={session.id}>
+                  <button type="button" onClick={() => router.push(`/?project=${encodeURIComponent(session.id)}`)} aria-current={session.id === projectId ? 'page' : undefined}>
+                    <span className="session-thumb"><MonitorPlay size={15}/></span>
+                    <span><strong>{session.title}</strong><small>{(session.durationMs / 1000).toFixed(1)}s · r{session.revision}{session.hasNarration ? ' · 已配音' : ''}</small></span>
+                  </button>
+                  <button className="session-action" type="button" onClick={() => void renameSession(session)} aria-label={`重命名 ${session.title}`}><Pencil size={12}/></button>
+                  <button className="session-action danger" type="button" onClick={() => void archiveSession(session)} aria-label={`归档 ${session.title}`}><Archive size={12}/></button>
+                </div>)}
+              </div>
+              <form className="session-new" onSubmit={createSession}>
+                <label htmlFor="new-session-brief">从空白 brief 新建视频</label>
+                <div><input id="new-session-brief" value={newSessionBrief} onChange={(event) => setNewSessionBrief(event.target.value)} placeholder="例如：12 秒云朵科普视频"/><button type="submit" disabled={newSessionBrief.trim().length < 6 || Boolean(busy)}><Plus size={14}/>创建</button></div>
+              </form>
+            </div> : null}
+          </section>
         </aside>
 
         <section className="canvas-column">

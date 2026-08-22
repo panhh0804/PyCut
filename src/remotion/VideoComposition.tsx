@@ -5,12 +5,13 @@ import type {ComponentType, VideoSpec} from '../lib/video-spec/schema';
 import {CaptionKaraoke} from './components/CaptionKaraoke';
 import {DynamicChart} from './components/DynamicChart';
 import {MediaBroll} from './components/MediaBroll';
+import {SceneCanvas} from './components/SceneCanvas';
 import {SplitScreen} from './components/SplitScreen';
 import {TextHero} from './components/TextHero';
 
 export type VideoCompositionProps = {spec: VideoSpec} & Record<string, unknown>;
 
-const components = {TextHero, SplitScreen, DynamicChart, CaptionKaraoke, MediaBroll} satisfies Record<ComponentType, typeof TextHero>;
+const components = {TextHero, SplitScreen, DynamicChart, CaptionKaraoke, MediaBroll, SceneCanvas} satisfies Record<ComponentType, typeof TextHero>;
 
 function keyframed(scene: CompiledScene, property: 'x' | 'y' | 'scale' | 'rotation' | 'opacity', fallback: number, frame: number) {
   const points = scene.keyframes.filter((keyframe) => keyframe.property === property).sort((a, b) => a.frame - b.frame);
