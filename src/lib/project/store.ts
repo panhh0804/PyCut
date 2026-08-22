@@ -31,6 +31,10 @@ export interface ProjectAgentRun {
   prompt: string;
   model: string;
   executionMode: string;
+  sessionId?: string;
+  provider?: string;
+  thinkingLevel?: string;
+  activeTools?: string[];
   createdAt: string;
   events: ProjectAgentEvent[];
 }
@@ -60,14 +64,54 @@ const fileFor = (projectId: string) => path.join(root, `${projectId.replaceAll(/
 
 async function persist(projectId: string, record: ProjectRecord) {
   await mkdir(root, {recursive: true});
-  await writeFile(fileFor(projectId), JSON.stringify(record, null, 2), 'utf8');
+  const target = fileFor(projectId);
+  const temporary = `${target}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  await writeFile(temporary, JSON.stringify(record, null, 2), 'utf8');
+  await rename(temporary, target);
+}
+
+async function withProjectQueue<T>(projectId: string, operation: () => Promise<T>): Promise<T> {
+  let release!: () => void;
+  const previous = queues.get(projectId) ?? Promise.resolve();
+  const current = new Promise<void>((resolve) => { release = resolve; });
+  const queued = previous.then(() => current);
+  queues.set(projectId, queued);
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (queues.get(projectId) === queued) queues.delete(projectId);
+  }
 }
 
 export async function replaceProject(projectId: string, spec: VideoSpec): Promise<ProjectRecord> {
-  const parsed = videoSpecSchema.parse({...spec, project: {...spec.project, id: projectId}});
-  const record: ProjectRecord = {spec: parsed, history: [], changeSets: [], pendingChangeSet: null, chatMessages: [], agentRuns: []};
-  await persist(projectId, record);
-  return record;
+  return withProjectQueue(projectId, async () => {
+    const parsed = videoSpecSchema.parse({...spec, project: {...spec.project, id: projectId}});
+    const record: ProjectRecord = {spec: parsed, history: [], changeSets: [], pendingChangeSet: null, chatMessages: [], agentRuns: []};
+    await persist(projectId, record);
+    return record;
+  });
+}
+
+/**
+ * Replace only the VideoSpec of an existing project while preserving the
+ * durable conversation/session envelope. This is used when draft_storyboard
+ * replaces the temporary generation canvas; using replaceProject() there
+ * would erase the creation brief that was queued before the Agent started.
+ */
+export async function replaceProjectSpec(projectId: string, spec: VideoSpec): Promise<ProjectRecord> {
+  return withProjectQueue(projectId, async () => {
+    const current = await getProject(projectId);
+    const parsed = videoSpecSchema.parse({...spec, project: {...spec.project, id: projectId}});
+    const record: ProjectRecord = {
+      ...current,
+      spec: parsed,
+      pendingChangeSet: null,
+    };
+    await persist(projectId, record);
+    return record;
+  });
 }
 
 export async function listProjects(): Promise<ProjectSummary[]> {
@@ -106,27 +150,34 @@ export async function projectExists(projectId: string) {
 }
 
 export async function archiveProject(projectId: string) {
-  const record = await getProject(projectId);
-  if (record.spec.project.id !== projectId) throw new Error('项目标识与存储记录不匹配');
-  await mkdir(archiveRoot, {recursive: true});
-  const archivedAt = new Date().toISOString().replaceAll(/[:.]/g, '-');
-  const target = path.join(archiveRoot, `${projectId.replaceAll(/[^a-zA-Z0-9-_]/g, '-')}-${archivedAt}.json`);
-  await rename(fileFor(projectId), target);
-  return {projectId, archivedAt, recoverable: true};
+  return withProjectQueue(projectId, async () => {
+    const record = await getProject(projectId);
+    if (record.spec.project.id !== projectId) throw new Error('项目标识与存储记录不匹配');
+    await mkdir(archiveRoot, {recursive: true});
+    const archivedAt = new Date().toISOString().replaceAll(/[:.]/g, '-');
+    const target = path.join(archiveRoot, `${projectId.replaceAll(/[^a-zA-Z0-9-_]/g, '-')}-${archivedAt}.json`);
+    await rename(fileFor(projectId), target);
+    return {projectId, archivedAt, recoverable: true};
+  });
 }
 
 export async function appendProjectChat(projectId: string, messages: ProjectChatMessage[]) {
-  const record = await getProject(projectId);
-  const updated = {...record, chatMessages: [...record.chatMessages, ...messages].slice(-80)};
-  await persist(projectId, updated);
-  return updated;
+  return withProjectQueue(projectId, async () => {
+    const record = await getProject(projectId);
+    const incomingIds = new Set(messages.map((message) => message.id));
+    const updated = {...record, chatMessages: [...record.chatMessages.filter((message) => !incomingIds.has(message.id)), ...messages].slice(-80)};
+    await persist(projectId, updated);
+    return updated;
+  });
 }
 
 export async function appendProjectAgentRun(projectId: string, run: ProjectAgentRun) {
-  const record = await getProject(projectId);
-  const updated = {...record, agentRuns: [...record.agentRuns, run].slice(-40)};
-  await persist(projectId, updated);
-  return updated;
+  return withProjectQueue(projectId, async () => {
+    const record = await getProject(projectId);
+    const updated = {...record, agentRuns: [...record.agentRuns.filter((item) => item.id !== run.id), run].slice(-40)};
+    await persist(projectId, updated);
+    return updated;
+  });
 }
 
 export async function getProject(projectId = 'transformer-60s'): Promise<ProjectRecord> {
@@ -142,13 +193,7 @@ export async function getProject(projectId = 'transformer-60s'): Promise<Project
 }
 
 export async function updateProject(projectId: string, changeSet: ChangeSet): Promise<ProjectRecord> {
-  let resolveQueue!: () => void;
-  const previous = queues.get(projectId) ?? Promise.resolve();
-  const current = new Promise<void>((resolve) => { resolveQueue = resolve; });
-  const queued = previous.then(() => current);
-  queues.set(projectId, queued);
-  await previous;
-  try {
+  return withProjectQueue(projectId, async () => {
     const record = await getProject(projectId);
     const applied = applyChangeSet(record.spec, changeSet);
     const next = repairVideoSpec(applied).spec;
@@ -161,70 +206,77 @@ export async function updateProject(projectId: string, changeSet: ChangeSet): Pr
     };
     await persist(projectId, updated);
     return updated;
-  } finally {
-    resolveQueue();
-    if (queues.get(projectId) === queued) queues.delete(projectId);
-  }
+  });
 }
 
 export async function undoProject(projectId: string): Promise<ProjectRecord> {
-  const record = await getProject(projectId);
-  const previous = record.history.at(-1);
-  if (!previous) return record;
-  const repaired = repairVideoSpec(previous).spec;
-  const restored = {
-    ...record,
-    spec: {...repaired, revision: record.spec.revision + 1, provenance: {...repaired.provenance, updatedAt: new Date().toISOString()}},
-    history: record.history.slice(0, -1),
-    changeSets: record.changeSets,
-  };
-  await persist(projectId, restored);
-  return restored;
+  return withProjectQueue(projectId, async () => {
+    const record = await getProject(projectId);
+    const previous = record.history.at(-1);
+    if (!previous) return record;
+    const repaired = repairVideoSpec(previous).spec;
+    const restored = {
+      ...record,
+      spec: {...repaired, revision: record.spec.revision + 1, provenance: {...repaired.provenance, updatedAt: new Date().toISOString()}},
+      history: record.history.slice(0, -1),
+      changeSets: record.changeSets,
+    };
+    await persist(projectId, restored);
+    return restored;
+  });
 }
 
 export async function resetProject(projectId: string): Promise<ProjectRecord> {
-  const record: ProjectRecord = {spec: createDefaultVideoSpec(projectId), history: [], changeSets: [], pendingChangeSet: null, chatMessages: [], agentRuns: []};
-  await persist(projectId, record);
-  return record;
+  return withProjectQueue(projectId, async () => {
+    const record: ProjectRecord = {spec: createDefaultVideoSpec(projectId), history: [], changeSets: [], pendingChangeSet: null, chatMessages: [], agentRuns: []};
+    await persist(projectId, record);
+    return record;
+  });
 }
 
 export async function stagePendingChangeSet(projectId: string, changeSet: ChangeSet): Promise<ProjectRecord> {
-  const record = await getProject(projectId);
-  if (changeSet.baseRevision !== record.spec.revision) {
-    throw new Error(`版本冲突：当前 r${record.spec.revision}，提案基于 r${changeSet.baseRevision}`);
-  }
-  const staged = {...record, pendingChangeSet: changeSet};
-  await persist(projectId, staged);
-  return staged;
+  return withProjectQueue(projectId, async () => {
+    const record = await getProject(projectId);
+    if (changeSet.baseRevision !== record.spec.revision) {
+      throw new Error(`版本冲突：当前 r${record.spec.revision}，提案基于 r${changeSet.baseRevision}`);
+    }
+    const staged = {...record, pendingChangeSet: changeSet};
+    await persist(projectId, staged);
+    return staged;
+  });
 }
 
 export async function approvePendingChangeSet(projectId: string): Promise<ProjectRecord> {
-  const record = await getProject(projectId);
-  if (!record.pendingChangeSet) return record;
-  const approved: ChangeSet = {...record.pendingChangeSet, baseRevision: record.spec.revision, approval: 'approved'};
-  const next = videoSpecSchema.parse(repairVideoSpec(applyChangeSet(record.spec, approved)).spec);
-  const updated: ProjectRecord = {
-    ...record,
-    spec: next,
-    history: [...record.history, record.spec].slice(-40),
-    changeSets: [...record.changeSets, approved].slice(-100),
-    pendingChangeSet: null,
-  };
-  await persist(projectId, updated);
-  return updated;
+  return withProjectQueue(projectId, async () => {
+    const record = await getProject(projectId);
+    if (!record.pendingChangeSet) return record;
+    const approved: ChangeSet = {...record.pendingChangeSet, baseRevision: record.spec.revision, approval: 'approved'};
+    const next = videoSpecSchema.parse(repairVideoSpec(applyChangeSet(record.spec, approved)).spec);
+    const updated: ProjectRecord = {
+      ...record,
+      spec: next,
+      history: [...record.history, record.spec].slice(-40),
+      changeSets: [...record.changeSets, approved].slice(-100),
+      pendingChangeSet: null,
+    };
+    await persist(projectId, updated);
+    return updated;
+  });
 }
 
 export async function rejectPendingChangeSet(projectId: string): Promise<ProjectRecord> {
-  const record = await getProject(projectId);
-  if (!record.pendingChangeSet) return record;
-  const rejected: ChangeSet = {...record.pendingChangeSet, approval: 'rejected'};
-  const updated = {
-    ...record,
-    changeSets: [...record.changeSets, rejected].slice(-100),
-    pendingChangeSet: null,
-  };
-  await persist(projectId, updated);
-  return updated;
+  return withProjectQueue(projectId, async () => {
+    const record = await getProject(projectId);
+    if (!record.pendingChangeSet) return record;
+    const rejected: ChangeSet = {...record.pendingChangeSet, approval: 'rejected'};
+    const updated = {
+      ...record,
+      changeSets: [...record.changeSets, rejected].slice(-100),
+      pendingChangeSet: null,
+    };
+    await persist(projectId, updated);
+    return updated;
+  });
 }
 
 export async function autoRepairProject(projectId: string, maxAttempts = 3) {

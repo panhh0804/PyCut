@@ -216,7 +216,49 @@ export function createDefaultVideoSpec(projectId = 'transformer-60s'): VideoSpec
       createdBy: 'agent',
       createdAt: now,
       updatedAt: now,
-      agentKernel: '@earendil-works/pi-agent-core@0.84.2',
+      agentKernel: '@earendil-works/pi-coding-agent@0.84.2/AgentSession',
     },
+  };
+}
+
+export function createPendingVideoSpec(projectId: string, brief: string, targetDurationMs = 30_000): VideoSpec {
+  const now = new Date().toISOString();
+  const durationMs = Math.max(100, Math.min(180_000, Math.round(targetDurationMs)));
+  const durationFrames = Math.max(1, Math.round(durationMs / 1000 * 30));
+  const summary = brief.trim().replaceAll(/\s+/g, ' ').slice(0, 120) || '新视频';
+  return {
+    schemaVersion: '1.0.0',
+    revision: 0,
+    project: {id: projectId, title: `${summary.slice(0, 28)} · 生成中`, targetDurationMs: durationMs, renderSeed: Math.abs([...projectId].reduce((seed, char) => (seed * 31 + char.charCodeAt(0)) | 0, 17))},
+    canvas: {width: 1920, height: 1080, fps: 30},
+    style: {
+      themeRef: 'picut-generation-canvas',
+      tokens: {
+        background: '#071522', surface: '#102A3D', primary: '#62E5CB', accent: '#78B8FF',
+        text: '#F5FAFD', muted: '#9CB5C3', fontFamily: 'Inter, PingFang SC, Microsoft YaHei, sans-serif', radius: 28,
+      },
+    },
+    assets: [],
+    storySpec: {
+      logline: summary,
+      audience: '由 Agent 从需求中规划',
+      scenes: [{
+        id: 'generation-canvas', purpose: '等待原生 Pi Agent 生成原创分镜', narration: '原生 Pi Agent 正在创建这条视频。',
+        visualIntent: '仅用作生成期间的空白工作画布', evidenceRefs: [], tempo: 'steady', mustShow: [], mustAvoid: ['复用示例视频'], approvalState: 'draft',
+      }],
+    },
+    editSpec: {
+      tracks: defaultTracks(),
+      scenes: [scene('generation-canvas', 0, durationFrames, 'TextHero', {
+        eyebrow: 'π AGENT SESSION · PLANNING', title: '正在从零创建', subtitle: summary, metric: 'OBSERVE → TOOL → VALIDATE',
+      })],
+      globalAudio: {
+        narrationAssetId: null, narrationSegments: [],
+        tts: {provider: 'siliconflow', model: 'fnlp/MOSS-TTSD-v0.5', voice: 'FunAudioLLM/CosyVoice2-0.5B:charles', speed: 1.08, gainDb: 0, responseFormat: 'wav', sampleRate: 44100},
+        bgmAssetId: null, bgmGainDb: -18,
+      },
+    },
+    constraints: {maxDurationMs: Math.max(durationMs, 180_000), safeAreaPct: 6, loudnessTargetLUFS: -14},
+    provenance: {createdBy: 'system', createdAt: now, updatedAt: now, agentKernel: '@earendil-works/pi-coding-agent@0.84.2/AgentSession · pending'},
   };
 }

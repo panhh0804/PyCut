@@ -63,6 +63,33 @@ interface RenderResult {
   routing?: {selected: 'remotion' | 'hyperframes'; confidence: number; scores: {remotion: number; hyperframes: number}; reasons: string[]; fallback: 'remotion' | 'hyperframes'; executed?: 'remotion' | 'hyperframes'; fallbackApplied?: boolean; fallbackReason?: string} | null;
   traceRun?: ProjectAgentRun;
 }
+interface AgentJobClient {
+  id: string;
+  projectId: string;
+  kind: 'edit' | 'create';
+  prompt: string;
+  status: 'queued' | 'running' | 'succeeded' | 'failed';
+  attempts: number;
+  events: ProjectAgentRun['events'];
+  createdAt: string;
+  error?: string;
+  result?: {
+    response: string;
+    provider: string;
+    model: string;
+    thinkingLevel: string;
+    executionMode: string;
+    sessionId: string;
+    traceRunId: string;
+  };
+}
+interface AgentJobSnapshot {
+  job: AgentJobClient;
+  spec: VideoSpec;
+  validation: ValidationReport;
+  pendingApproval: ChangeSet | null;
+  traceRun: ProjectAgentRun | null;
+}
 interface SessionSummary {id: string; title: string; durationMs: number; revision: number; updatedAt: string; hasNarration: boolean}
 interface StudioProps {
   projectId: string;
@@ -90,7 +117,7 @@ export function Studio({projectId, sessions, initialMessages, initialAgentRuns, 
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages.length ? initialMessages : [starterMessage(initialSpec)]);
   const [prompt, setPrompt] = useState('');
   const [selectedSceneId, setSelectedSceneId] = useState(initialSpec.editSpec.scenes[0]?.id ?? '');
-  const [busy, setBusy] = useState<'agent' | 'save' | 'render' | 'undo' | 'audio' | null>(null);
+  const [busy, setBusy] = useState<'save' | 'render' | 'undo' | 'audio' | null>(null);
   const [renderBackend, setRenderBackend] = useState<'auto' | 'remotion' | 'hyperframes'>('auto');
   const [renderResult, setRenderResult] = useState<RenderResult | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -110,6 +137,7 @@ export function Studio({projectId, sessions, initialMessages, initialAgentRuns, 
   const [agentRuns, setAgentRuns] = useState<ProjectAgentRun[]>(initialAgentRuns);
   const [traceOpen, setTraceOpen] = useState(true);
   const [selectedRunId, setSelectedRunId] = useState(initialAgentRuns.at(-1)?.id ?? '');
+  const [activeJob, setActiveJob] = useState<AgentJobClient | null>(null);
 
   useEffect(() => {
     window.localStorage.setItem('picut:last-project', projectId);
@@ -125,7 +153,105 @@ export function Studio({projectId, sessions, initialMessages, initialAgentRuns, 
   const updateFromResponse = useCallback((data: {spec: VideoSpec; validation: ValidationReport}) => {
     setSpec(data.spec);
     setValidation(data.validation);
+    setSelectedSceneId((current) => data.spec.editSpec.scenes.some((scene) => scene.id === current)
+      ? current
+      : data.spec.editSpec.scenes[0]?.id ?? '');
   }, []);
+
+  const applyJobSnapshot = useCallback((snapshot: AgentJobSnapshot) => {
+    updateFromResponse(snapshot);
+    setPendingApproval(snapshot.pendingApproval ?? null);
+    setActiveJob(snapshot.job);
+    const run: ProjectAgentRun = snapshot.traceRun ?? {
+      id: `run-${snapshot.job.id}`,
+      prompt: snapshot.job.prompt,
+      model: snapshot.job.result?.model ?? 'gpt-5.5',
+      provider: snapshot.job.result?.provider ?? 'openai-codex',
+      thinkingLevel: snapshot.job.result?.thinkingLevel ?? 'medium',
+      executionMode: snapshot.job.result?.executionMode ?? 'native-session · background',
+      sessionId: snapshot.job.result?.sessionId,
+      createdAt: snapshot.job.createdAt,
+      events: snapshot.job.events,
+    };
+    setAgentRuns((current) => [...current.filter((item) => item.id !== run.id), run].slice(-40));
+    setSelectedRunId(run.id);
+    if (snapshot.job.status === 'succeeded' || snapshot.job.status === 'failed') {
+      const response = snapshot.job.result?.response ?? `任务未完成：${snapshot.job.error ?? 'Agent Job 执行失败'}`;
+      const message: ChatMessage = {
+        id: `agent-${snapshot.job.id}`,
+        role: 'agent',
+        text: response,
+        meta: snapshot.job.status === 'succeeded'
+          ? `${snapshot.job.result?.provider}/${snapshot.job.result?.model} · ${snapshot.job.result?.thinkingLevel} · native session`
+          : 'π AgentSession · failed',
+      };
+      setMessages((current) => [...current.filter((item) => item.id !== message.id), message]);
+      setCreationBrief(null);
+      setCreationPanelOpen(false);
+      if (snapshot.job.status === 'failed') setNotice(snapshot.job.error ?? 'Agent 后台任务失败');
+      router.refresh();
+    }
+  }, [router, updateFromResponse]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch(`/api/agent/jobs?projectId=${encodeURIComponent(projectId)}`, {cache: 'no-store'})
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error ?? '读取后台任务失败');
+        if (cancelled) return;
+        const active = (data.jobs as AgentJobClient[]).find((job) => job.status === 'queued' || job.status === 'running');
+        if (active) {
+          setActiveJob(active);
+          if (active.kind === 'create') {
+            setCreationBrief(active.prompt);
+            // The generation canvas remains immediately usable; progress is
+            // available in the dock and Agent trace instead of a blocking page.
+            setCreationPanelOpen(false);
+          }
+        }
+      })
+      .catch((error) => { if (!cancelled) setNotice(error instanceof Error ? error.message : '读取后台任务失败'); });
+    return () => { cancelled = true; };
+  }, [projectId]);
+
+  const streamingJobId = activeJob && (activeJob.status === 'queued' || activeJob.status === 'running') ? activeJob.id : null;
+  useEffect(() => {
+    if (!streamingJobId) return;
+    const source = new EventSource(`/api/agent/jobs/${encodeURIComponent(streamingJobId)}/events`);
+    const onSnapshot = (event: MessageEvent<string>) => {
+      const snapshot = JSON.parse(event.data) as AgentJobSnapshot;
+      applyJobSnapshot(snapshot);
+      if (snapshot.job.status === 'succeeded' || snapshot.job.status === 'failed') source.close();
+    };
+    const onJobError = (event: MessageEvent<string>) => {
+      try {
+        const payload = JSON.parse(event.data) as {error?: string};
+        if (payload.error) setNotice(payload.error);
+      } catch {
+        // Native EventSource will reconnect automatically after transient loss.
+      }
+    };
+    source.addEventListener('snapshot', onSnapshot as EventListener);
+    source.addEventListener('error', onJobError as EventListener);
+    return () => source.close();
+  }, [applyJobSnapshot, streamingJobId]);
+
+  const agentWorking = activeJob?.status === 'queued' || activeJob?.status === 'running';
+
+  const retryActiveJob = useCallback(async () => {
+    if (!activeJob || activeJob.status !== 'failed') return;
+    setNotice(null);
+    try {
+      const response = await fetch(`/api/agent/jobs/${encodeURIComponent(activeJob.id)}`, {method: 'POST'});
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? '后台任务重试失败');
+      setActiveJob(data.job as AgentJobClient);
+      if (activeJob.kind === 'create') setCreationBrief(activeJob.prompt);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : '后台任务重试失败');
+    }
+  }, [activeJob]);
 
   const seekTo = useCallback((frame: number) => {
     const next = Math.max(0, Math.min(durationFrames - 1, Math.round(frame)));
@@ -147,46 +273,34 @@ export function Studio({projectId, sessions, initialMessages, initialAgentRuns, 
   const submitPrompt = useCallback(async (event: FormEvent) => {
     event.preventDefault();
     const instruction = prompt.trim();
-    if (!instruction || busy) return;
-    setMessages((current) => [...current, {id: crypto.randomUUID(), role: 'human', text: instruction, meta: 'You · just now'}]);
+    if (!instruction || agentWorking || busy) return;
     setPrompt('');
-    setBusy('agent');
     setNotice(null);
     try {
-      const isNewProject = /(?:新建|创建|生成).*(?:视频|项目)/.test(instruction) && !/修改|改成|调整/.test(instruction);
-      if (isNewProject) {
-        setCreationBrief(instruction);
-        setCreationPanelOpen(true);
-        const response = await fetch('/api/projects', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({brief: instruction})});
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error ?? '新建项目失败');
-        router.push(data.url);
-        return;
-      }
-      const response = await fetch('/api/agent/run', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({projectId, prompt: instruction})});
+      const response = await fetch('/api/agent/jobs', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          projectId,
+          prompt: instruction,
+          kind: 'edit',
+          context: {revision: spec.revision, selectedSceneId, playheadFrame, inspectorTab, selectedField: null},
+        }),
+      });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? 'Agent 请求失败');
-      updateFromResponse(data);
-      setPendingApproval(data.pendingApproval ?? null);
-      if (data.traceRun) {
-        setAgentRuns((current) => [...current, data.traceRun].slice(-40));
-        setSelectedRunId(data.traceRun.id);
-      }
-      setMessages((current) => [...current, {id: crypto.randomUUID(), role: 'agent', text: data.response, meta: `${data.model} · ${data.executionMode}`}]);
+      const job = data.job as AgentJobClient;
+      setActiveJob(job);
+      setMessages((current) => [...current.filter((item) => item.id !== `human-${job.id}`), {id: `human-${job.id}`, role: 'human', text: instruction, meta: 'You · background job'}]);
     } catch (error) {
-      setCreationBrief(null);
-      setCreationPanelOpen(false);
       setNotice(error instanceof Error ? error.message : 'Agent 请求失败');
-    } finally {
-      setBusy(null);
     }
-  }, [busy, projectId, prompt, router, updateFromResponse]);
+  }, [agentWorking, busy, inspectorTab, playheadFrame, projectId, prompt, selectedSceneId, spec.revision]);
 
   const createSession = useCallback(async (event: FormEvent) => {
     event.preventDefault();
     const brief = newSessionBrief.trim();
     if (brief.length < 6 || busy) return;
-    setBusy('agent');
     setCreationBrief(brief);
     setCreationPanelOpen(true);
     setSessionOpen(false);
@@ -200,7 +314,6 @@ export function Studio({projectId, sessions, initialMessages, initialAgentRuns, 
       setCreationBrief(null);
       setCreationPanelOpen(false);
       setNotice(error instanceof Error ? error.message : '新建会话失败');
-      setBusy(null);
     }
   }, [busy, newSessionBrief, router]);
 
@@ -257,28 +370,24 @@ export function Studio({projectId, sessions, initialMessages, initialAgentRuns, 
   }, [busy, projectId, ttsModel, ttsSpeed, ttsVoice, updateFromResponse]);
 
   const resolveApproval = useCallback(async (decision: 'approve' | 'reject') => {
-    if (busy || !pendingApproval) return;
+    if (agentWorking || !pendingApproval) return;
     const instruction = decision === 'approve' ? '确认上述结构修改' : '拒绝上述结构修改';
-    setMessages((current) => [...current, {id: crypto.randomUUID(), role: 'human', text: instruction, meta: 'Human approval'}]);
-    setBusy('agent');
     setNotice(null);
     try {
-      const response = await fetch('/api/agent/run', {
+      const response = await fetch('/api/agent/jobs', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({projectId, prompt: instruction}),
+        body: JSON.stringify({projectId, prompt: instruction, kind: 'edit', context: {revision: spec.revision, selectedSceneId, playheadFrame, inspectorTab, selectedField: null}}),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? '审批处理失败');
-      updateFromResponse(data);
-      setPendingApproval(data.pendingApproval ?? null);
-      setMessages((current) => [...current, {id: crypto.randomUUID(), role: 'agent', text: data.response, meta: `${data.model} · approval resolved`}]);
+      const job = data.job as AgentJobClient;
+      setActiveJob(job);
+      setMessages((current) => [...current.filter((item) => item.id !== `human-${job.id}`), {id: `human-${job.id}`, role: 'human', text: instruction, meta: 'Human approval · background job'}]);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : '审批处理失败');
-    } finally {
-      setBusy(null);
     }
-  }, [busy, pendingApproval, projectId, updateFromResponse]);
+  }, [agentWorking, inspectorTab, pendingApproval, playheadFrame, projectId, selectedSceneId, spec.revision]);
 
   const commitPatch = useCallback(async (intent: string, patch: Array<{op: 'replace' | 'add' | 'remove'; path: string; value?: unknown}>) => {
     if (busy) return;
@@ -547,13 +656,13 @@ export function Studio({projectId, sessions, initialMessages, initialAgentRuns, 
           <section className={`agent-trace ${traceOpen ? 'open' : ''}`}>
             <button className="agent-trace-head" type="button" onClick={() => setTraceOpen((current) => !current)} aria-expanded={traceOpen}>
               <span><Workflow size={14}/><strong>Agent 轨迹</strong></span>
-              <small>{agentRuns.length ? `${agentRuns.length} runs` : '等待首次运行'}</small>
+              <small>{agentWorking ? '后台运行中' : agentRuns.length ? `${agentRuns.length} runs` : '等待首次运行'}</small>
               <ChevronDown size={13}/>
             </button>
             {traceOpen && <div className="agent-trace-body">
               {agentRuns.length ? <>
                 {agentRuns.length > 1 && <select className="trace-run-select" aria-label="选择 Agent 运行记录" value={selectedRun?.id} onChange={(event) => setSelectedRunId(event.target.value)}>{agentRuns.map((run, index) => <option value={run.id} key={run.id}>{String(index + 1).padStart(2, '0')} · {run.prompt.slice(0, 28)}</option>)}</select>}
-                <div className="trace-run-meta"><strong>{selectedRun?.model}</strong><span>{selectedRun?.executionMode}</span></div>
+                <div className="trace-run-meta"><strong>{selectedRun?.provider ? `${selectedRun.provider}/` : ''}{selectedRun?.model}</strong><span>{selectedRun?.thinkingLevel ? `${selectedRun.thinkingLevel} · ` : ''}{selectedRun?.executionMode}</span>{selectedRun?.sessionId && <span>session {selectedRun.sessionId.slice(0, 8)}</span>}</div>
                 <p className="trace-prompt">{selectedRun?.prompt}</p>
                 <ol>{selectedRun?.events.filter((event) => !['message_start', 'message_end', 'message_update'].includes(event.type)).slice(-14).map((event, index) => <li className={event.status ?? 'info'} key={`${event.at}-${event.type}-${index}`}><i/><div><strong>{event.summary}</strong>{event.detail && <span>{event.detail}</span>}</div><time>{new Date(event.at).toLocaleTimeString('zh-CN', {hour: '2-digit', minute: '2-digit', second: '2-digit'})}</time></li>)}</ol>
               </> : <p className="trace-empty">新建视频或运行指令后，这里会显示观察、工具、质量门与引擎路由。</p>}
@@ -561,12 +670,13 @@ export function Studio({projectId, sessions, initialMessages, initialAgentRuns, 
           </section>
           <div className="message-list" aria-live="polite">
             {messages.map((message) => <article className={`message ${message.role}`} key={message.id}><div className="avatar">{message.role === 'agent' ? <Bot size={17}/> : '你'}</div><div><span className="message-meta">{message.meta}</span><p>{message.text}</p></div></article>)}
-            {busy === 'agent' && <article className="message agent"><div className="avatar"><Bot size={17}/></div><div><span className="message-meta">π Agent · ReAct loop</span><p className="thinking"><i/><i/><i/>正在观察并调用工具</p></div></article>}
+            {agentWorking && <article className="message agent"><div className="avatar"><Bot size={17}/></div><div><span className="message-meta">openai-codex/gpt-5.5 · persistent job</span><p className="thinking"><i/><i/><i/>{activeJob.events.at(-1)?.summary ?? '正在恢复原生会话并调用工具'}</p></div></article>}
+            {activeJob?.status === 'failed' && <article className="message agent job-failed"><div className="avatar"><CircleAlert size={17}/></div><div><span className="message-meta">可恢复后台任务</span><p>{activeJob.error}</p><button type="button" onClick={() => void retryActiveJob()}>从原生 transcript 重试</button></div></article>}
           </div>
-          {pendingApproval && <section className="approval-card" aria-label="待确认结构修改"><div className="approval-head"><span>Human checkpoint</span><strong>{pendingApproval.risk.toUpperCase()}</strong></div><p>{pendingApproval.intent}</p><small>提案基于 r{pendingApproval.baseRevision} · 确认前不会改写时间轴</small><div><button type="button" onClick={() => void resolveApproval('reject')} disabled={Boolean(busy)}>拒绝</button><button className="approve" type="button" onClick={() => void resolveApproval('approve')} disabled={Boolean(busy)}><Check size={13}/>确认提交</button></div></section>}
+          {pendingApproval && <section className="approval-card" aria-label="待确认结构修改"><div className="approval-head"><span>Human checkpoint</span><strong>{pendingApproval.risk.toUpperCase()}</strong></div><p>{pendingApproval.intent}</p><small>提案基于 r{pendingApproval.baseRevision} · 确认前不会改写时间轴</small><div><button type="button" onClick={() => void resolveApproval('reject')} disabled={Boolean(busy) || agentWorking}>拒绝</button><button className="approve" type="button" onClick={() => void resolveApproval('approve')} disabled={Boolean(busy) || agentWorking}><Check size={13}/>确认提交</button></div></section>}
           <form className="prompt-box" onSubmit={submitPrompt}>
             <textarea aria-label="给剪辑 Agent 的指令" value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="例如：把第 3 幕改成蓝色，并延长到 12 秒" rows={3}/>
-            <div><span>⌘ ↵ 运行</span><button type="submit" disabled={!prompt.trim() || Boolean(busy)} aria-label="发送指令"><Send size={16}/></button></div>
+            <div><span>{agentWorking ? '后台任务运行中 · 工作台仍可操作' : '⌘ ↵ 运行'}</span><button type="submit" disabled={!prompt.trim() || Boolean(busy) || agentWorking} aria-label="发送指令"><Send size={16}/></button></div>
           </form>
           <div className="suggestions"><button type="button" onClick={() => setPrompt('把第 3 幕的图表改成蓝色，并延长到 12 秒')}>改第 3 幕</button><button type="button" onClick={() => void synthesizeAudio()}>生成旁白</button><button type="button" onClick={() => setPrompt('检查全部质量门并告诉我风险')}>检查质量</button></div>
         </aside>

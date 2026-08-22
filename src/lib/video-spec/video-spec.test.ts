@@ -1,5 +1,4 @@
 import {describe, expect, it} from 'vitest';
-import {changeSetFromInstruction} from '@/lib/agent/prompt-patch';
 import {createDefaultVideoSpec} from './defaults';
 import {compileVideoSpec, toSrt} from './compiler';
 import {applyChangeSet, createChangeSet, LockedFieldError, RevisionConflictError} from './patch';
@@ -27,9 +26,22 @@ describe('VideoSpec compiler contract', () => {
     expect(srt.match(/-->/g)).toHaveLength(6);
   });
 
-  it('turns a local instruction into an auditable cascade patch', () => {
+  it('applies a model-authored auditable cascade patch without a regex translator', () => {
     const spec = createDefaultVideoSpec();
-    const changeSet = changeSetFromInstruction(spec, '把第 3 幕改成蓝色，并延长到 12 秒');
+    const changeSet = createChangeSet({
+      baseRevision: spec.revision,
+      actor: 'agent',
+      intent: '精确修改第 3 幕颜色和时长',
+      risk: 'medium',
+      approval: 'not-required',
+      patch: [
+        {op: 'replace', path: '/editSpec/scenes/2/props/accentColor', value: '#4D8DFF'},
+        {op: 'replace', path: '/editSpec/scenes/2/durationFrames', value: 360},
+        {op: 'replace', path: '/editSpec/scenes/3/startFrame', value: 930},
+        {op: 'replace', path: '/editSpec/scenes/4/startFrame', value: 1230},
+        {op: 'replace', path: '/editSpec/scenes/5/startFrame', value: 1560},
+      ],
+    });
     const next = applyChangeSet(spec, changeSet);
     expect(next.revision).toBe(1);
     expect(next.editSpec.scenes[2].props.accentColor).toBe('#4D8DFF');

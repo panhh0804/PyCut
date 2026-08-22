@@ -1,115 +1,123 @@
 # πCut
 
-> Agentic Video Compiler —— 以 VideoSpec 为单一事实源，将 π Agent、ReAct、Remotion、HyperFrames 和可视时间轴组合成一套人机协同代码视频系统。
+> Agentic Video Compiler —— 原生 Pi AgentSession 负责自主规划，πCut 负责提供可审计的视频工具、人机协作工作台与确定性双引擎渲染。
 
-πCut 不让模型直接生成难以维护的 TSX 或 HTML，而是让 Agent 通过受约束工具生成和修改版本化 `VideoSpec`。同一份规范可被 Remotion 与 HyperFrames 独立编译、预览和导出；用户也可在 Chat、Canvas、Timeline 和 Inspector 中修改同一份状态。
+πCut 将完整 Pi coding-agent runtime、结构化 `VideoSpec`、Remotion、HyperFrames、联网素材、TTS 与传统剪辑工作台组合在同一个本地应用中。Pi 保留原生会话、工具循环、Skills、Extensions、完整 transcript、自动压缩和 coding tools；视频框架不替模型做关键词规划，也不把自然语言编辑压缩成固定正则规则。
 
-## 已跑通的垂直切片
+核心约定只有一条：视频状态以版本化 `VideoSpec` 为单一事实源。Agent、Timeline、Inspector、Canvas 与两个渲染引擎读写同一份工程状态，因此每次修改都可预览、撤销、校验和追溯。
 
-- π Agent 真实运行时：`@earendil-works/pi-agent-core` + `@earendil-works/pi-ai`。
-- SiliconFlow OpenAI-compatible 模型调用，支持主模型和故障回退。
-- 完整 ReAct 循环：Observe → Tool Call → Tool Result → Validate → Reply。
-- StorySpec + EditSpec 双层 VideoSpec，具备 Schema、revision、provenance 和稳定 Scene ID。
-- 八个受控 Agent 工具：建项、原生分镜、Patch、校验、联网素材、旁白合成、预览渲染、正式导出。
-- 五个强类型原子组件：`TextHero`、`SplitScreen`、`DynamicChart`、`CaptionKaraoke`、`MediaBroll`。
-- 新建会话由远程 π Agent 从空白需求生成独立 StorySpec / EditSpec；模型未调用 `draft_storyboard` 时创建失败，绝不回退到示例视频。
-- Remotion、HyperFrames 与第三个“自主路由”选项；路由评分、置信度、依据和自动失败回退进入 RenderManifest 与会话 Agent 轨迹。
-- SiliconFlow TTS、自然语速分段、短淡入淡出、精确留白、多轨波形与音画对齐。
-- NOAA Ocean Explorer / Wikimedia Commons 可追溯素材搜索、许可过滤、本地资产化与 B-roll 运镜。
-- 多会话持久化、运行轨迹持久化、会话内历史 Run 切换与可恢复归档。
-- Chat + Remotion Player + 可拖拽分镜时间轴 + Inspector 组成的暗色编辑工作台。
-- UI 修改、Agent 修改和时间轴拖动统一提交为 ChangeSet。
-- 乐观版本控制、字段锁、镜头锁、撤销、冲突拒绝和人工审批。
-- G1–G7 质量门、SRT、VideoSpec、AssetManifest 和 RenderManifest 交付包。
-- 单元测试、双引擎契约测试、真实 Agent 调用和 Chrome 端到端测试。
+## 当前已经跑通
 
-## 系统架构
+- 原生运行时：`@earendil-works/pi-coding-agent@0.84.2/AgentSession`，不是单轮 completion，也不是 `pi-agent-core` 的受控套壳。
+- 模型链路：复用本机 Pi 设置和登录态，当前实测为 `openai-codex/gpt-5.5 · medium → chatgpt.com/backend-api`。
+- 原生资源栈：项目 Trust、`AGENTS.md`、`.agents/skills`、`.pi` 资源、Prompt Templates、Extensions、完整 coding tools、自动重试与 compaction。
+- 不设置 Pi 工具白名单；14 个 πCut 视频工具作为领域能力附加到原生 `read / bash / edit / write` 等工具之上。
+- 无关键词 Planner、无 regex Patch、无 `editorNote` 伪修改、无“远程失败后静默降级成本地模板”。
+- 新建视频从专用空白生成画布开始，强制完成 `draft_storyboard`，不会载入 Transformer、云朵或其他缓存示例。
+- UI 指代注入：`selectedSceneId`、播放头、Inspector Tab、选中字段、revision 会随指令进入本轮隐藏结构化上下文。
+- 持久化后台 Agent Job：立即返回工作台，通过 SSE 显示实时工具轨迹；浏览器断线或进程中断后，从原生 transcript 与当前 VideoSpec 恢复。
+- 多会话持久化：每个会话保存独立 VideoSpec、聊天、原生 Pi session、Agent runs、ChangeSet、审批状态、素材和输出。
+- Remotion / HyperFrames / 自主路由三种选择；路由得分、依据、实际执行和 fallback 写入轨迹与 `RenderManifest.json`。
+- 五类可渲染组件：`TextHero`、`SplitScreen`、`DynamicChart`、`CaptionKaraoke`、`MediaBroll`。
+- 视频、叠加、字幕、旁白、BGM 多轨时间轴；支持选择、定位、移动、裁切、分割、复制、删除、关键帧、效果、转场和撤销。
+- Inspector 的 Scene / Style / Motion 直接修改真实消费字段；全局主题同步背景、表面、文字、强调色和全部镜头。
+- 联网素材检索、本地资产化、可信下载域、许可与署名记录；当前支持 NASA、NOAA、Wikimedia 等来源路由。
+- SiliconFlow TTS 作为独立可选服务，不参与 Pi 的规划模型链路。
+- G1–G7 确定性质量门；失败时保留可见画布并允许 Agent 继续诊断/修复，不用“加载失败”替代编辑状态。
+- 正式交付：MP4、SRT、VideoSpec、AssetManifest、RenderManifest 与视频 SHA-256。
+- 项目级官方技能：9 个 HyperFrames Skills、12 个 Remotion Skills，ResourceLoader 实测 23 skills、0 diagnostics。
+
+## 架构
 
 ```mermaid
-%%{init: {"theme":"base","themeVariables":{"background":"#F7FBFC","primaryColor":"#EFFAF7","primaryTextColor":"#16333D","primaryBorderColor":"#2CBFA5","lineColor":"#7695A0","secondaryColor":"#EEF5FF","tertiaryColor":"#FFF5ED","clusterBkg":"#FFFFFF","clusterBorder":"#C8DCE2","edgeLabelBackground":"#FFFFFF","fontFamily":"Inter, PingFang SC, sans-serif","fontSize":"13px"},"flowchart":{"curve":"basis","nodeSpacing":30,"rankSpacing":42,"padding":14}}}%%
+%%{init: {"theme":"base","themeVariables":{"background":"#F7FBFC","primaryColor":"#EDF9F6","primaryTextColor":"#173840","primaryBorderColor":"#28B89D","lineColor":"#7A9BA5","secondaryColor":"#EEF5FF","tertiaryColor":"#FFF4EC","clusterBkg":"#FFFFFF","clusterBorder":"#C8DCE2","edgeLabelBackground":"#FFFFFF","fontFamily":"Inter, PingFang SC, sans-serif","fontSize":"12px"},"flowchart":{"curve":"basis","nodeSpacing":26,"rankSpacing":38,"padding":12}}}%%
 flowchart TB
-    subgraph EXPERIENCE["01 · Interaction & Collaboration"]
-      CHAT["Director Chat"]
-      PLAYER["Remotion Player"]
-      TIMELINE["Resizable Timeline"]
-      INSPECTOR["Inspector & Locks"]
-    end
+  subgraph UI["01 · Human Collaboration"]
+    CHAT["Director Chat"]
+    CANVAS["Remotion Player"]
+    TL["Multitrack Timeline"]
+    INSPECT["Inspector + Checkpoint"]
+  end
 
-    subgraph AGENT["02 · π Agent Core"]
-      REACT["ReAct Loop"]
-      POLICY["Approval / Ownership Policy"]
-      TOOLS["Eight Typed Tools"]
-      TRACE[("Persistent Agent Runs")]
-    end
+  subgraph PI["02 · Native Pi Runtime"]
+    SESSION[("AgentSession")]
+    RES["AGENTS · Skills · Extensions"]
+    BUILTIN["Native coding + network tools"]
+    DOMAIN["14 πCut video tools"]
+    TRANSCRIPT[("Transcript + Compaction")]
+  end
 
-    subgraph SPEC["03 · VideoSpec IR"]
-      STORY[("StorySpec")]
-      EDIT[("EditSpec")]
-      CHANGE[("ChangeSet + Revision")]
-    end
+  subgraph STATE["03 · Durable State"]
+    JOB[("Background Job + SSE")]
+    SPEC[("StorySpec + EditSpec")]
+    CHANGE[("Revision + ChangeSet")]
+    MEMORY[("Chat + Runs + Assets")]
+  end
 
-    subgraph ENGINES["04 · Deterministic Rendering"]
-      REMOTION["Remotion Adapter"]
-      HF["HyperFrames Adapter"]
-      ROUTER{"Autonomous Router"}
-      COMPONENTS["Typed Component Registry"]
-    end
+  subgraph RENDER["04 · Deterministic Delivery"]
+    GATES{"G1–G7"}
+    ROUTER{"Autonomous Router"}
+    REM["Remotion"]
+    HF["HyperFrames"]
+    OUT[("MP4 + SRT + Manifests")]
+  end
 
-    subgraph QUALITY["05 · Quality & Delivery"]
-      GATES{"G1–G7"}
-      PROBES["Runtime / Layout / Frame Probes"]
-      PACKAGE[("MP4 + SRT + Manifests")]
-    end
+  CHAT --> JOB --> SESSION
+  TL & INSPECT --> CHANGE --> SPEC
+  CANVAS -. "same revision" .-> SPEC
+  RES --> SESSION
+  SESSION --> BUILTIN & DOMAIN
+  SESSION <--> TRANSCRIPT
+  DOMAIN --> SPEC & CHANGE & MEMORY
+  JOB --> MEMORY
+  SPEC --> GATES --> ROUTER
+  ROUTER --> REM & HF --> OUT
 
-    CHAT & TIMELINE & INSPECTOR --> CHANGE
-    CHAT --> REACT --> TOOLS
-    POLICY --> TOOLS
-    TOOLS --> STORY & EDIT & CHANGE
-    REACT --> TRACE
-    CHANGE --> EDIT
-    STORY --> EDIT
-    EDIT --> GATES
-    GATES --> COMPONENTS
-    COMPONENTS --> ROUTER --> REMOTION & HF
-    REMOTION & HF --> PROBES --> PACKAGE
-    PLAYER -. "same snapshot" .-> EDIT
-
-    classDef teal fill:#E8F9F5,stroke:#22B89E,color:#123B36,stroke-width:2px;
-    classDef orange fill:#FFF0E6,stroke:#F47F50,color:#66301F,stroke-width:2px;
-    class REACT,TOOLS,REMOTION,HF,PLAYER,TIMELINE teal;
-    class POLICY,CHANGE,GATES,PACKAGE orange;
+  classDef mint fill:#E8F8F4,stroke:#24B79D,color:#153D36,stroke-width:2px;
+  classDef blue fill:#ECF3FF,stroke:#6C99DF,color:#223D63,stroke-width:2px;
+  classDef coral fill:#FFF0E8,stroke:#EF865A,color:#613522,stroke-width:2px;
+  class SESSION,DOMAIN,JOB,SPEC mint;
+  class CANVAS,TL,REM,HF blue;
+  class INSPECT,CHANGE,GATES,OUT coral;
 ```
 
-### 人机协同状态流
+### 原生会话与后台任务生命周期
 
 ```mermaid
-%%{init: {"theme":"base","themeVariables":{"background":"#F7FBFC","primaryColor":"#EDF9F6","primaryTextColor":"#173840","primaryBorderColor":"#2CBFA5","lineColor":"#7897A2","secondaryColor":"#EEF5FF","tertiaryColor":"#FFF4EC","mainBkg":"#FFFFFF","secondBkg":"#F4F8FA","stateBkg":"#FFFFFF","stateBorder":"#43B9A5","stateLabelColor":"#173840","labelBackgroundColor":"#FFFFFF","edgeLabelBackground":"#FFFFFF","fontFamily":"Inter, PingFang SC, sans-serif","fontSize":"11px"}}}%%
-stateDiagram-v2
-    [*] --> Observing: 用户指令 / UI 事件
-    Observing --> Acting: 选择受控工具
-    Acting --> Validating: 产生 ChangeSet
-    Validating --> Previewing: 无阻断项
-    Validating --> Repairing: 质量门失败
-    Repairing --> Acting: 最小修复
-    Acting --> PendingApproval: 高风险结构修改
-    PendingApproval --> Acting: 人工确认
-    PendingApproval --> Previewing: 人工拒绝 / 规范不变
-    Previewing --> Observing: 新的自然语言或时间轴调整
-    Previewing --> Rendering: 明确正式导出
-    Rendering --> Delivered: MP4 + SRT + Manifests
-    Delivered --> [*]
+%%{init: {"theme":"base","themeVariables":{"background":"#F7FBFC","primaryColor":"#FFFFFF","primaryTextColor":"#173840","primaryBorderColor":"#46BDA8","lineColor":"#7897A2","secondaryColor":"#EEF5FF","tertiaryColor":"#FFF4EC","actorBkg":"#EAF9F5","actorBorder":"#2BB69E","actorTextColor":"#173840","signalColor":"#5F7F8A","signalTextColor":"#173840","labelBoxBkgColor":"#FFF7F0","labelBoxBorderColor":"#EE936B","labelTextColor":"#5E3424","noteBkgColor":"#F2F7FF","noteBorderColor":"#7EA2D9","noteTextColor":"#203A5B","fontFamily":"Inter, PingFang SC, sans-serif","fontSize":"11px"}}}%%
+sequenceDiagram
+  actor U as User
+  participant UI as Studio
+  participant J as Durable Job
+  participant P as Pi AgentSession
+  participant V as VideoSpec Tools
+  participant Q as Quality + Renderer
+
+  U->>UI: 新建或自然语言编辑
+  UI->>J: prompt + structured EditIntent
+  J-->>UI: 202 + jobId（立即显示工作台）
+  J->>P: resume/create native session
+  P->>P: load AGENTS / Skills / Extensions
+  P->>V: Observe → tool calls
+  V-->>P: revisioned results
+  J-->>UI: SSE snapshots + live trace
+  P->>Q: validate_spec / render when authorized
+  Q-->>P: gates / output / routing evidence
+  P-->>J: settled transcript + final response
+  J-->>UI: persisted spec + chat + trace
+  Note over J,P: 断线或重启后按 jobId 与 transcript 恢复
 ```
 
 ## 快速启动
 
-### 环境要求
+### 环境
 
-- macOS / Linux；当前完整导出在 macOS Apple Silicon 验证。
+- macOS 或 Linux；当前完整导出已在 macOS Apple Silicon 验证。
 - Node.js 22，建议 `>= 22.19`。
-- Chrome / Chromium。
-- FFmpeg 和 FFprobe。
+- Chrome / Chromium、FFmpeg、FFprobe。
+- 本机 Pi 已登录，并在 Pi 设置中选择可用 provider/model；πCut 不复制 OAuth token。
 
-### 安装与运行
+### 安装
 
 ```bash
 npm install --ignore-scripts
@@ -120,125 +128,167 @@ npm run dev
 
 打开 [http://localhost:3000](http://localhost:3000)。
 
-`.env.local` 是服务端本地配置，已被 Git 忽略。它只保存 secret 文件路径；请用本地 secret manager 或编辑器把模型密钥写入 `.picut/secrets/model-api-key`。不要将密钥放入 `NEXT_PUBLIC_*`、源码、Prompt、日志、截图或渲染资产。
+Pi 的 provider、model、thinking、auth 与 `httpProxy` 来自本机原生 Pi 配置。πCut 的网络初始化按以下顺序选择连接：
+
+1. Pi 全局 `httpProxy`；
+2. `PICUT_HTTP_PROXY`；
+3. `HTTP_PROXY / HTTPS_PROXY`；
+4. macOS 系统代理；
+5. 直连。
+
+可用下面的只读端点确认实际配置：
+
+```bash
+curl http://localhost:3000/api/config
+```
+
+期望看到类似：
+
+```json
+{
+  "agentMode": "native-session",
+  "runtime": "@earendil-works/pi-coding-agent@0.84.2/AgentSession",
+  "provider": "openai-codex",
+  "model": "gpt-5.5",
+  "thinkingLevel": "medium",
+  "fullPiResources": true
+}
+```
+
+### 可选 TTS
+
+SiliconFlow 只用于旁白合成。`.env.local` 仅保存 secret 文件路径，真实 Key 放在 Git 忽略的 `.picut/secrets/model-api-key`；不要放进 `NEXT_PUBLIC_*`、源码、Prompt、聊天、日志、截图或渲染资产。
 
 ```dotenv
-PICUT_AGENT_MODE=auto
-PICUT_MODEL_PROVIDER=siliconflow
 PICUT_MODEL_BASE_URL=https://api.siliconflow.cn/v1
-PICUT_MODEL_ID=<model-id>
-PICUT_MODEL_FALLBACK_IDS=<fallback-a>,<fallback-b>
 PICUT_MODEL_API_KEY_FILE=.picut/secrets/model-api-key
-PICUT_CHROME_EXECUTABLE=/absolute/path/to/chrome
 ```
 
-`PICUT_AGENT_MODE` 支持：
+## 如何生成一个新视频
 
-- `auto`：编辑任务优先远程模型，失败时可回退到本地确定性 Planner；新建视频始终要求远程 π Agent 成功调用 `draft_storyboard`，不会回退到示例或缓存。
-- `remote`：只使用远程模型，错误直接返回。
-- `local`：不请求外部模型，用于测试和离线开发。
+1. 打开左上角 `Sessions`。
+2. 在“新建视频会话”里写完整 brief，例如：
 
-## Studio 交互
+   ```text
+   生成一个 12 秒中文云朵形成科普视频，自己联网找真实云层素材，三段式叙事，信息卡和实拍交替，不要旁白
+   ```
 
-### 新建会话 → 从零生成
+3. 点击“创建”后立刻进入新会话。此时看到的是该会话专属的“正在从零创建”画布，而不是任何缓存视频。
+4. 工作台保持可用；左侧 `Agent 轨迹` 实时显示 Pi 读取技能、规划分镜、搜索素材、修改 VideoSpec、校验与渲染的过程。
+5. 生成完成后，可以在 Timeline/Inspector 手调，也可以继续说：
 
-在 `Sessions` 面板输入完整需求，例如：
+   ```text
+   第二幕换成实拍积雨云，把这个镜头缩小到 85%，标题改成“凝结成云”
+   ```
 
-```text
-生成一个 11 秒的深海热液喷口科普视频，画面要有真实海底素材、动态结构解释和节奏字幕
-```
+6. 顶部 `Engine` 选择“自主路由”、Remotion 或 HyperFrames，点击 `Export MP4`。
 
-创建期间会显示独立生成遮罩。服务端仅在 π Agent 完成 `draft_storyboard`、VideoSpec 校验和持久化后切换会话；失败时保留当前会话并显示错误，不会载入旧视频。
+生成失败不会换成示例项目，也不会谎报完成。Job 保留失败原因和原生 transcript，可点击“从原生 transcript 重试”。
 
-左侧 `Agent 轨迹` 可以在历次 Run 之间切换，查看模型、执行模式、Observe → Act 回合、工具结果、质量门、联网素材状态和引擎路由决策。
+## Studio 协作模型
 
-### Chat → Agent
+### Chat → Native Pi → VideoSpec
 
-可直接输入：
+普通聊天不经过关键词分类器。Pi 先观察完整工程和 UI 选区，自主决定读取技能、搜索资料、调用一个或多个领域工具、修改代码或运行质量门。对任何已经提交的 VideoSpec 修改，运行时守卫会要求本轮调用 `validate_spec`。
 
-```text
-把第 3 幕的图表改成蓝色，并延长到 12 秒
-```
+### UI → ChangeSet → Pi Context
 
-Agent 将调用 `apply_spec_patch`，观察工具结果，再调用 `validate_spec`。前端只接收已持久化的最新 revision。
-
-### Timeline → VideoSpec → Agent
-
-- 选择任一 Scene，拖动左侧手柄调整入点。
-- 拖动右侧手柄调整出点，后续 Scene 自动级联平移。
-- 拖动支持可调吸附，单 Scene 最短 0.1 秒；Inspector 的 Duration 同样以 0.1 秒为下限。
-- 松手时才提交一个原子 ChangeSet，并在 Director 中生成 `UI → VideoSpec → Agent` 事件。
+- 点击 Timeline clip 会选中该 Scene，并把播放头移动到点击位置对应时间。
+- Clip 最短 0.1 秒；Duration 控件的最小值也是 0.1 秒，不允许先拖到 0 再报错。
+- Timeline 支持移动、裁切、分割、复制、删除和波纹重排。
+- Inspector Style/Motion 写入真实 `props / transform / effects / transition / keyframes` 字段。
+- UI 手调产生原子 ChangeSet；下一轮 Pi 会看到新的 revision、选中 Scene、播放头和 Inspector 上下文。
+- 生成或联网搜索时，画布、播放、Timeline 和 Inspector 保持可用。
 
 ### Human checkpoint
 
-删除、新增、重排或重构 Scene 属于高风险操作。Agent 只能暂存提案，Studio 会显示待确认卡片。确认前 revision 和时间轴不变；拒绝后提案进入审计记录但不改写 VideoSpec。
+新增、删除、重排或整体重构 Scene 属于结构变更。Pi 可以生成完整提案，但必须等待 Studio 中的批准/拒绝。普通文本、颜色、位置、动画和时长调整可以直接提交。
 
-## Agent 工具契约
+## 原生 Pi 能力与视频工具
 
-| 工具 | 职责 | 风险策略 |
+Pi 的原生 coding tools 没有被 πCut allowlist 裁剪。它可以按项目权限读取代码、编辑实现、执行命令、联网查资料和加载 Skills/Extensions。πCut 另外提供以下强类型视频工具：
+
+| 工具 | 能力 | 约束 |
 |---|---|---|
-| `create_project` | 创建或明确重置项目 | 仅用户明确要求时调用 |
-| `draft_storyboard` | π Agent 原生输出本次需求的完整结构化分镜 | 未调用则拒绝新建，不使用预设回退 |
-| `apply_spec_patch` | 自然语言转受审计 ChangeSet | 尊重字段锁与镜头锁 |
-| `validate_spec` | 运行 G1–G7 确定性质量门 | 任一阻断项拒绝渲染 |
-| `search_media` | 按主题路由可信素材源并写入可追溯 B-roll | 校验来源、署名、许可和可信下载域 |
-| `synthesize_narration` | SiliconFlow TTS、分段处理与主轨混音 | 服务端密钥、自然语速、镜头尾部留白 |
-| `render_preview` | 导出可快速检查的预览产物 | 校验通过后才执行 |
-| `render_final` | 生成正式成片和五件套 | 必须是当前用户明确导出意图 |
+| `get_video_spec` | 观察完整 VideoSpec、质量门、待审批项与 UI 选区 | 编辑前优先使用 |
+| `create_project` | 用户明确要求时重置项目 | 必须有本轮明确授权 |
+| `draft_storyboard` | 从 brief 生成原创 StorySpec/EditSpec | 新建会话必须执行 |
+| `update_scene` | 修改单镜头文字、旁白、组件、时序、样式、Motion、效果 | 支持 UI 当前 Scene 指代 |
+| `apply_video_patch` | 修改全局主题、轨道、资产、音频或批量字段 | 拒绝 `editorNote` 与系统字段 |
+| `insert_scene` | 插入完整 StoryScene/EditScene | 结构审批 |
+| `reorder_scenes` | 完整镜头重排与波纹对齐 | 结构审批 |
+| `delete_scene` | 同步删除 Story/Edit 镜头 | 结构审批 |
+| `resolve_change` | 批准或拒绝待处理 ChangeSet | 只接受明确用户决定 |
+| `validate_spec` | G1–G7 校验与确定性自动修复 | 修改后必跑 |
+| `search_media` | 搜索、下载、许可校验、署名、本地化 | 不把凭据发给素材源 |
+| `synthesize_narration` | 分镜 TTS、时长校准、淡入淡出、多轨写入 | 使用独立服务端 Key |
+| `render_preview` | 快速预览渲染 | 质量门通过后执行 |
+| `render_final` | 正式 MP4 五件套 | 当前轮明确授权后执行 |
 
-## VideoSpec 核心契约
+## 项目级 Skills
+
+技能安装在 `.agents/skills/`，随仓库工作区被 Pi 的 `DefaultResourceLoader` 发现；不需要写入全局 `.pi/skills`。`SettingsManager` 只对 πCut 当前工作区启用 Project Trust，不会改变用户全局 Trust 配置。
+
+当前安装：
+
+- HyperFrames：`hyperframes`、animation、audio、cli、core、creative、keyframes、registry、media-use。
+- Remotion：best-practices、captions、create、docs、interactivity、maps、markup、multimedia、render、saas、studio、upgrade。
+
+重装官方技能：
+
+```bash
+npx skills add heygen-com/hyperframes
+npx skills add remotion-dev/skills
+```
+
+技能源码属于 Agent 知识与参考实现，独立安全审查，不参与 πCut 应用 ESLint/TypeScript 构建。宿主强制设置 `HYPERFRAMES_NO_TELEMETRY=1`。
+
+## VideoSpec
 
 ```json
 {
   "schemaVersion": "1.0.0",
-  "revision": 0,
-  "project": {
-    "id": "transformer-60s",
-    "targetDurationMs": 60000,
-    "renderSeed": 314159
-  },
+  "revision": 2,
+  "project": {"id": "cloud-science-12s", "targetDurationMs": 12000},
   "canvas": {"width": 1920, "height": 1080, "fps": 30},
-  "storySpec": {"scenes": ["semantic scene contracts"]},
+  "style": {"themeRef": "picut-nature", "tokens": {"background": "#071522"}},
+  "storySpec": {"scenes": [{"id": "scene-01", "purpose": "建立问题"}]},
   "editSpec": {
+    "tracks": [
+      {"id": "video-main", "kind": "video"},
+      {"id": "caption-main", "kind": "caption"},
+      {"id": "audio-narration", "kind": "audio"}
+    ],
     "scenes": [
       {
-        "id": "scene-03",
-        "startFrame": 570,
-        "durationFrames": 360,
-        "backend": "either",
-        "component": "DynamicChart",
-        "props": {"kicker": "STEP 01", "title": "相关性", "chartType": "bar", "labels": ["小猫"], "values": [92], "highlightIndex": 0, "formula": "QKᵀ / √dₖ"},
-        "locks": {"owner": "shared", "fields": [], "locked": false}
+        "id": "scene-01",
+        "startFrame": 0,
+        "durationFrames": 120,
+        "component": "MediaBroll",
+        "transform": {"x": 0, "y": 0, "scale": 1, "rotation": 0, "opacity": 1}
       }
     ]
   },
-  "provenance": {"agentKernel": "@earendil-works/pi-agent-core@0.84.2"}
+  "provenance": {"agentKernel": "@earendil-works/pi-coding-agent@0.84.2/AgentSession"}
 }
 ```
 
-VideoSpec 是持久化的工程真相；Remotion TSX 和 HyperFrames HTML 都是可重新生成的编译产物。
+VideoSpec 是工程真相；Remotion TSX 和 HyperFrames HTML 是可重新生成的编译/渲染产物。
 
-## 双引擎渲染
+## 双引擎与自主路由
 
-### 通过 Studio
+自主路由综合场景组件、素材类型、音频复用、关键帧密度和引擎约束打分，输出：
 
-1. 在顶部 `Engine` 中选择“自主路由”（默认）、Remotion 或 HyperFrames。
-2. 确认 `G1–G7 Ready`。
-3. 点击 `Export MP4`。
-4. 完成后在右下角下载 MP4 或查看 RenderManifest。
+- `selected`：计划选择；
+- `scores` 与 `confidence`；
+- `reasons`：可读依据；
+- `fallback`：备用引擎；
+- `executed`：实际执行；
+- `fallbackApplied / fallbackReason`。
 
-### 通过本地脚本
+这些数据同时进入会话 Agent 轨迹和 RenderManifest。任一引擎失败时可以自动切到备用引擎，不会把 fallback 隐藏成首选成功。
 
-先启动 `npm run dev`，然后在另一个终端调用与 Studio 相同的渲染 API：
-
-```bash
-npm run render:demo -- remotion preview
-npm run render:demo -- remotion final
-npm run render:demo -- hyperframes final
-# Studio/API 还支持 backend=auto；自主路由结果会写入 RenderManifest 与 Agent 轨迹。
-```
-
-产物位于：
+产物目录：
 
 ```text
 public/renders/<project>-r<revision>-<backend>-<mode>/
@@ -249,110 +299,99 @@ public/renders/<project>-r<revision>-<backend>-<mode>/
 └── RenderManifest.json
 ```
 
-`public/renders`、`output` 和 `.picut` 均为本地运行产物，默认不提交到 Git。
+## G1–G7
 
-## G1–G7 质量门
-
-| Gate | 检查内容 | 行为 |
+| Gate | 检查 | 行为 |
 |---|---|---|
-| G1 | VideoSpec Schema 和基础类型 | 错误阻断 |
-| G2 | StoryScene / EditScene 语义引用完整性 | 错误阻断 |
-| G3 | 帧边界、重叠、空隙和最大时长 | 错误阻断，空隙警告 |
-| G4 | 素材 src 与资产契约 | 错误阻断 |
-| G5 | 组件注册与五类 Props Schema | 错误阻断 |
-| G6 | 分段旁白、BGM 和视听对齐准备度 | 缺少 BGM 时保留非阻断提醒 |
-| G7 | 交付版本与清单完整性 | 错误阻断 |
+| G1 | VideoSpec Schema 与基础类型 | 阻断结构错误 |
+| G2 | Story/Edit 语义引用与稳定 Scene ID | 阻断不完整契约 |
+| G3 | 帧边界、重叠、空隙、总时长 | 自动修复确定性问题，否则阻断 |
+| G4 | 素材 src、可用性、许可与本地化 | 阻断不可用资产 |
+| G5 | 组件注册与 Props 合同 | 阻断不可渲染组件 |
+| G6 | 旁白分段、BGM、音画同步准备度 | 无音频需求时仅提醒 |
+| G7 | revision、provenance 与交付完整性 | 阻断错误版本导出 |
 
-HyperFrames 正式导出前还经过其原生 `lint + runtime + layout + contrast` 门禁；Remotion 通过编译、Player 预览、服务端渲染和多时间点帧抽检验收。
+质量失败不会让画布消失。系统保留上一个可见 revision，并允许 Agent 观察诊断、自动修复和重新校验。
 
-## 验证命令
+## 持久化与 API
+
+本地数据：
+
+```text
+.picut/
+├── projects/       # VideoSpec、聊天、ChangeSet、Agent runs
+├── jobs/           # 可恢复后台任务状态与事件
+├── pi-sessions/    # 原生 JSONL transcript、分支与 compaction
+└── secrets/        # Git 忽略的独立服务密钥
+```
+
+| Method | Route | 用途 |
+|---|---|---|
+| `GET/POST` | `/api/agent/jobs` | 列出或创建持久化 Agent Job |
+| `GET/POST` | `/api/agent/jobs/:jobId` | 快照或失败重试 |
+| `GET` | `/api/agent/jobs/:jobId/events` | SSE 实时状态与断线重连 |
+| `POST` | `/api/agent/run` | 兼容用同步原生 AgentSession 调用 |
+| `GET/POST` | `/api/projects` | 会话列表 / 创建空白会话并排队生成 |
+| `GET/PATCH/DELETE` | `/api/projects/:id` | 项目读取、重命名、可恢复归档 |
+| `POST` | `/api/projects/:id/changesets` | UI 原子 ChangeSet |
+| `POST` | `/api/projects/:id/undo` | 撤销 |
+| `POST` | `/api/projects/:id/audio/synthesize` | 旁白合成与音轨写入 |
+| `POST` | `/api/projects/:id/media/enrich` | 素材搜索与本地化 |
+| `POST` | `/api/projects/:id/render` | 指定/自主路由渲染 |
+| `GET` | `/api/config` | 非敏感能力对账 |
+
+## 安全边界
+
+- 不读取、展示或外传 `.picut/secrets`、`.env.local` 值、本机 Pi OAuth/token 或其他凭据。
+- 不把凭据写入 Prompt、工具参数、transcript、日志、素材元数据、截图或外部请求。
+- Pi 创作/编码能力不做 allowlist 裁剪；密钥访问、不可恢复删除、最终发布/上传和付费外部动作仍受明确授权约束。
+- 结构性视频修改走 Human checkpoint；普通可逆编辑不打断 Agent 规划。
+- 项目写入使用项目级队列与临时文件原子替换；聊天和 Agent run 按稳定 ID 幂等 upsert。
+- HyperFrames/media-use telemetry 在宿主层关闭；技能的外联示例不会获得模型/TTS密钥。
+- RenderManifest 固定 revision、规范摘要、路由证据与 MP4 SHA-256。
+
+## 验证
 
 ```bash
 npm run typecheck
-npm run lint
 npm test
+npm run lint
 npm run build
 npm run verify
 ```
 
-启动开发服务后执行真实 Chrome E2E：
+真实本地端到端验收应覆盖：
 
-```bash
-node scripts/e2e.mjs
-node scripts/verify-generated-session.mjs <project-id>
-node scripts/verify-auto-route-hyperframes.mjs <project-id>
-# 非 3000 端口可设置 PICUT_ORIGIN，例如 PICUT_ORIGIN=http://localhost:3001。
-```
+- `/api/config` 显示 `native-session / openai-codex / gpt-5.5 / medium`；
+- 从 revision 0 专用生成画布创建全新会话；
+- 原生 Pi 自主读取项目 Skill；
+- `draft_storyboard → search_media → validate_spec`；
+- 创建与后续编辑复用同一个 `sessionId`；
+- UI 指代更新真实 `transform / props` 字段；
+- Job 的 SSE、持久化、失败重试和恢复；
+- G1–G7；
+- 自主路由、正式 MP4 和五件套清单；
+- `git diff --check` 与秘密扫描。
 
-E2E 覆盖：
-
-- 首屏、Player 和当前会话的动态 Timeline Clip。
-- 选中 Scene 与 Player seek 同步。
-- 拖动出点、级联时间轴、ChangeSet 和撤销。
-- 结构删除提案、审批卡和人工拒绝。
-- Inspector 颜色修改。
-- 远程 Agent 调用与局部 DSL Patch。
-- G1–G7 状态、revision 变化、撤销恢复。
-- console error、page error 和 request failure 零容忍检查。
-
-## API
-
-| Method | Route | 用途 |
-|---|---|---|
-| `POST` | `/api/agent/run` | 运行一轮 π Agent / ReAct |
-| `GET/POST` | `/api/projects` | 列出持久化会话 / 由远程 π Agent 从零创建会话 |
-| `GET` | `/api/config` | 只返回非敏感运行配置 |
-| `GET` | `/api/projects/:id` | 项目、历史、变更和质量报告 |
-| `POST` | `/api/projects/:id/changesets` | 提交人类 UI ChangeSet |
-| `POST` | `/api/projects/:id/undo` | 恢复前一快照并生成新 revision |
-| `POST` | `/api/projects/:id/audio/synthesize` | 合成、校准并写入分段旁白与主音轨 |
-| `POST` | `/api/projects/:id/media/enrich` | 搜索、下载并注入带来源信息的素材 |
-| `POST` | `/api/projects/:id/render` | 人工指定或自主路由双引擎预览/正式导出 |
-
-## 目录结构
+## 目录
 
 ```text
 src/
-├── app/
-│   ├── api/                    # Agent、项目、ChangeSet、渲染 API
-│   └── globals.css             # Studio 视觉系统
-├── components/studio/
-│   ├── Studio.tsx             # Chat / Canvas / Timeline / Inspector
-│   └── RemotionPreview.tsx    # 客户端动态 Player
+├── app/api/
+│   ├── agent/jobs/            # 持久化 Job、快照、重试、SSE
+│   └── projects/              # 会话、音频、素材、渲染、ChangeSet
+├── components/studio/         # Chat / Canvas / Timeline / Inspector
 ├── lib/
-│   ├── agent/                  # π Agent、ReAct、指令转 Patch
-│   ├── audio/                  # TTS、时长校准、波形和混音
-│   ├── project/                # revision、会话、轨迹、撤销、待审批状态
-│   ├── render/                 # Remotion / HyperFrames Adapter 与自主路由
-│   ├── research/               # 可追溯联网素材源
-│   └── video-spec/             # Schema、编译、Patch、G1–G7
-└── remotion/
-    ├── components/             # 五个原子视频组件
-    └── VideoComposition.tsx    # 帧级编排
+│   ├── agent/                 # Native AgentSession、网络、Jobs、14 工具
+│   ├── audio/                 # TTS、分段、淡入淡出、多轨
+│   ├── project/               # 原子持久化、revision、审批、归档
+│   ├── render/                # Remotion/HyperFrames Adapter 与路由
+│   ├── research/              # 可追溯素材检索
+│   └── video-spec/            # Schema、Patch、repair、G1–G7
+├── remotion/                  # 组件与帧级 Composition
+└── app/globals.css            # Studio 视觉系统
 ```
-
-## 密钥与渲染安全
-
-- `.env.local` 被 `.gitignore` 的 `.env*` 规则排除，且只保存 secret 文件路径；真实值位于同样被忽略的 `.picut/secrets/model-api-key`。
-- 模型配置模块仅在服务端加载；`/api/config` 不返回密钥。
-- HyperFrames 子进程使用显式最小环境白名单，不继承 `PICUT_MODEL_*` 或其他业务密钥。
-- Agent 只能调用八个带 Schema 的领域工具，没有任意 Shell 权限；素材写入限定在项目资产目录与可信域。
-- 最终渲染前固定 VideoSpec revision，RenderManifest 记录规范摘要和视频 SHA-256。
-- 高风险结构操作必须在另一轮人类确认后提交。
-
-## 当前边界与演进接口
-
-当前工作台仍提供一个本地默认工程用于首次启动，但所有“新建会话”都必须由远程 π Agent 从零生成。BGM、ASR 字级时间戳和通用全网视频素材仍属于后续能力；缺少 BGM 时 G6 给出可见但不阻断的提醒。Wikimedia Commons 在部分网络环境可能不可达，海洋主题已经具备 NOAA Ocean Explorer 官方源路由。
-
-已预留的下一阶段接口包括：
-
-- ASR / Whisper 词级时间戳与字幕卡点。
-- Scene Checkpoint DAG 与长任务恢复。
-- 品牌、组件、用户偏好的显式 Memory。
-- 知识解说、数据报表、产品发布等 Domain Pack。
-- 动态组件隔离沙箱、签名 Manifest 与组件市场。
-- 队列、Scene 级缓存、云渲染、多租户与可观测性。
 
 ## License
 
-仓库尚未指定开源许可证。在正式对外发布前，请由项目所有者选择并补充 LICENSE。
+仓库尚未指定开源许可证。正式公开分发前，请由项目所有者选择并补充 `LICENSE`。

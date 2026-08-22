@@ -11,6 +11,7 @@ const nextConfig: NextConfig = {
     '@remotion/renderer',
     '@earendil-works/pi-agent-core',
     '@earendil-works/pi-ai',
+    '@earendil-works/pi-coding-agent',
     'hyperframes',
   ],
 };

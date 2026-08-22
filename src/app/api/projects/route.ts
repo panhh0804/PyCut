@@ -1,18 +1,27 @@
 import {NextResponse} from 'next/server';
 import {z} from 'zod';
-import {runPiCutAgent} from '@/lib/agent/runtime';
-import {appendProjectAgentRun, appendProjectChat, archiveProject, listProjects, projectExists} from '@/lib/project/store';
+import {createAgentJob} from '@/lib/agent/jobs';
+import {archiveProject, listProjects, projectExists, replaceProject} from '@/lib/project/store';
+import {createPendingVideoSpec} from '@/lib/video-spec/defaults';
 
 export const runtime = 'nodejs';
 
 const inputSchema = z.object({
   brief: z.string().min(6).max(4000),
   projectId: z.string().regex(/^[a-zA-Z0-9-_]+$/).optional(),
+  targetDurationMs: z.number().int().min(100).max(180_000).optional(),
 });
 
 function projectIdFromBrief(brief: string) {
   const seconds = brief.match(/(\d+(?:\.\d+)?)\s*(?:秒|s)/i)?.[1]?.replace('.', '-') ?? 'video';
   return `picut-${seconds}s-${Date.now().toString(36)}`;
+}
+
+function durationFromBrief(brief: string) {
+  const seconds = Number(brief.match(/(\d+(?:\.\d+)?)\s*(?:秒|s)/i)?.[1]);
+  return Number.isFinite(seconds) && seconds > 0
+    ? Math.max(100, Math.min(180_000, Math.round(seconds * 1000)))
+    : 30_000;
 }
 
 function publicError(error: unknown) {
@@ -34,31 +43,22 @@ export async function POST(request: Request) {
     projectId = baseProjectId;
     let suffix = 2;
     while (await projectExists(projectId)) projectId = `${baseProjectId}-${suffix++}`;
-    const result = await runPiCutAgent(projectId, input.brief, {requireRemote: true, creatingProject: true});
-    if (!result.generatedFromScratch) throw new Error('π Agent 没有生成新的 VideoSpec，已拒绝载入任何预设视频');
-    const now = new Date().toISOString();
-    await appendProjectChat(projectId, [
-      {id: crypto.randomUUID(), role: 'human', text: input.brief, meta: 'You · creation brief', createdAt: now},
-      {id: crypto.randomUUID(), role: 'agent', text: result.response, meta: `${result.model} · π Agent native`, createdAt: new Date().toISOString()},
-    ]);
-    const traceRun = {
-      id: crypto.randomUUID(),
+    const targetDurationMs = input.targetDurationMs ?? durationFromBrief(input.brief);
+    const record = await replaceProject(projectId, createPendingVideoSpec(projectId, input.brief, targetDurationMs));
+    const job = await createAgentJob({
+      projectId,
       prompt: input.brief,
-      model: result.model,
-      executionMode: result.executionMode,
-      createdAt: now,
-      events: result.events,
-    };
-    await appendProjectAgentRun(projectId, traceRun);
+      kind: 'create',
+      context: {revision: record.spec.revision, selectedSceneId: 'generation-canvas', playheadFrame: 0, inspectorTab: 'scene'},
+    });
     return NextResponse.json({
       projectId,
       url: `/?project=${encodeURIComponent(projectId)}`,
-      spec: result.spec,
-      validation: result.validation,
-      agent: {kernel: '@earendil-works/pi-agent-core', model: result.model, executionMode: result.executionMode, generatedFromScratch: true},
-      events: result.events,
-      traceRun,
-    }, {status: 201, headers: {'Cache-Control': 'no-store'}});
+      spec: record.spec,
+      job,
+      eventsUrl: `/api/agent/jobs/${encodeURIComponent(job.id)}/events`,
+      agent: {kernel: '@earendil-works/pi-coding-agent/AgentSession', executionMode: 'persistent-background-job', generatedFromScratch: false},
+    }, {status: 202, headers: {'Cache-Control': 'no-store'}});
   } catch (error) {
     if (projectId && await projectExists(projectId)) {
       try {

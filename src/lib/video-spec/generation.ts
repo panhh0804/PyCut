@@ -206,6 +206,6 @@ export function videoSpecFromAgentPlan(projectId: string, brief: string, plan: A
       },
     },
     constraints: {maxDurationMs: Math.max(100, Math.round(targetFrames / fps * 1000)), safeAreaPct: 6, loudnessTargetLUFS: -14},
-    provenance: {createdBy: 'agent', createdAt: now, updatedAt: now, agentKernel: '@earendil-works/pi-agent-core@0.84.2 · native-tool-plan'},
+    provenance: {createdBy: 'agent', createdAt: now, updatedAt: now, agentKernel: '@earendil-works/pi-coding-agent@0.84.2/AgentSession'},
   });
 }

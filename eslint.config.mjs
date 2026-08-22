@@ -5,5 +5,8 @@ import nextTs from 'eslint-config-next/typescript';
 export default defineConfig([
   ...nextVitals,
   ...nextTs,
-  globalIgnores(['.next/**', 'node_modules/**', 'output/**', 'public/renders/**', '.picut/**']),
+  // Project-local Agent skills are vendored knowledge/reference packages, not
+  // πCut application source. They are reviewed separately and loaded by Pi's
+  // ResourceLoader, so their upstream examples must not inherit app lint rules.
+  globalIgnores(['.next/**', 'node_modules/**', 'output/**', 'public/renders/**', '.picut/**', '.agents/**', '.pi/**']),
 ]);
