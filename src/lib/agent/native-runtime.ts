@@ -12,6 +12,8 @@ import {
   type AgentSessionEvent,
 } from '@earendil-works/pi-coding-agent';
 import {getProject} from '@/lib/project/store';
+import {routeRenderBackend, type RenderRouteDecision} from '@/lib/render/router';
+import {buildRenderRouteTrace} from '@/lib/render/trace';
 import {validateVideoSpec} from '@/lib/video-spec/validation';
 import type {EditIntentContext, NativeSessionInfo, SerializableAgentEvent} from './types';
 import {ensurePiNetwork, publicNetworkInfo} from './network';
@@ -25,12 +27,14 @@ You are the native Pi coding agent embedded in πCut. Keep Pi's complete AgentSe
 πCut domain rules:
 - VideoSpec is the sole source of truth for video output. For video creation or editing, use the πCut video tools; never directly edit files under .picut or pretend a file edit changed the canvas.
 - Before a non-trivial video edit, observe the current state with get_video_spec. Resolve “这个/它/这里/当前镜头” from the hidden structured UI context.
-- For new videos, do not mechanically map every idea to the five legacy card templates. Prefer SceneCanvas with deliberately varied layer composition, typography, shapes, charts, formulas, code, particles, camera motion, color system, and per-layer timing. Reuse a prebuilt component only when it is genuinely the best shot. Adjacent scenes should differ in composition and motion grammar while remaining stylistically coherent.
+- For new videos, do not mechanically map every idea to the five legacy card templates. Prefer SceneCanvas when it genuinely improves the shot, but compose content-first: decide the focal message, supporting evidence, reading order, grid, safe area, and motion beats before adding decoration. A shape, line, glow, or particle layer must frame, connect, encode, reveal, or direct attention to specific content; never use geometry as filler. Build clear video-scale type hierarchy (normally 64–120px headline, 28–44px support, 18–24px label), explicit alignment and generous negative space. Use real footage, images, charts, metrics, formulas, code, diagrams, or purposeful typography according to the subject instead of repeating “text + glowing shapes”. Adjacent scenes should differ in composition and motion grammar while remaining stylistically coherent.
+- Treat G5 composition diagnostics as a Critic pass. When they reveal accidental overlap, weak hierarchy, unsafe text, decoration-heavy scenes, or repeated text-plus-shape layouts, revise the VideoSpec and validate again. A deliberate exception is allowed, but explain it rather than silently ignoring the diagnostic.
 - Prefer update_scene for one-scene text/style/motion/timing changes. Use apply_video_patch for global or batch fields. Use insert_scene, reorder_scenes, and delete_scene for structural work.
 - Never write editorNote or another unconsumed field as a fallback. If the requested visual behavior is not representable, explain the missing capability instead of claiming success.
 - Structural changes require the existing human checkpoint. Do not bypass it with bash/edit/write.
 - After any committed VideoSpec mutation, call validate_spec and observe its result before reporting completion.
 - When the user requests real footage or material, call search_media using the current project and scene mediaQuery. Do not repeat questions already answered by VideoSpec.
+- Unless the user requests silence or supplies music, call compose_bgm after creating a new video. Choose mood, tempo, energy, and gain from the story and narration density; keep narration intelligible and explain the musical choice in the tool direction.
 - Use render_preview for previews. Use render_final only when the user explicitly authorizes a final export in the current turn.
 - The built-in Pi coding tools remain available for genuine code/workspace tasks, but they are not substitutes for auditable VideoSpec tools.
 - Never read or reveal .picut/secrets, .env.local values, ~/.pi/agent/auth.json, OAuth tokens, API keys, or other credentials. Never place credentials in prompts, tool arguments, transcripts, logs, media metadata, or external requests.
@@ -112,6 +116,14 @@ function serializeEvent(event: AgentSessionEvent): SerializableAgentEvent | null
   };
 }
 
+function routingFromToolResult(event: AgentSessionEvent): RenderRouteDecision | null {
+  if (event.type !== 'tool_execution_end' || event.isError || !['render_preview', 'render_final'].includes(event.toolName)) return null;
+  const details = (event.result as {details?: {routing?: unknown}} | undefined)?.details;
+  const routing = details?.routing as Partial<RenderRouteDecision> | null | undefined;
+  if (!routing || routing.requested !== 'auto' || !routing.selected || !routing.scores || !routing.scenes || !routing.reasons || !routing.fallback) return null;
+  return routing as RenderRouteDecision;
+}
+
 function assistantText(messages: AgentMessage[]) {
   const last = [...messages].reverse().find((message) => message.role === 'assistant');
   if (!last || last.role !== 'assistant') return '';
@@ -146,7 +158,7 @@ function currentTurnSnapshot(projectId: string, record: Awaited<ReturnType<typeo
   });
 }
 
-const mutationTools = new Set(['draft_storyboard', 'update_scene', 'apply_video_patch', 'insert_scene', 'reorder_scenes', 'delete_scene', 'resolve_change', 'search_media', 'synthesize_narration']);
+const mutationTools = new Set(['draft_storyboard', 'update_scene', 'apply_video_patch', 'insert_scene', 'reorder_scenes', 'delete_scene', 'resolve_change', 'search_media', 'synthesize_narration', 'compose_bgm']);
 
 interface NativeRunOptions {
   creatingProject?: boolean;
@@ -228,17 +240,20 @@ async function runNative(projectId: string, prompt: string, options: NativeRunOp
     resourceLoader,
     customTools: createVideoTools(projectId, prompt, options.editIntent),
   });
+  const emitEvent = (event: SerializableAgentEvent) => {
+    events.push(event);
+    try {
+      options.onEvent?.(event);
+    } catch {
+      // A UI/job trace subscriber must never be able to abort the Pi loop.
+    }
+  };
   const unsubscribe = session.subscribe((event) => {
     if (event.type === 'tool_execution_end' && !event.isError) completedTools.push(event.toolName);
     const serialized = serializeEvent(event);
-    if (serialized) {
-      events.push(serialized);
-      try {
-        options.onEvent?.(serialized);
-      } catch {
-        // A UI/job trace subscriber must never be able to abort the Pi loop.
-      }
-    }
+    if (serialized) emitEvent(serialized);
+    const renderedRoute = routingFromToolResult(event);
+    if (renderedRoute) buildRenderRouteTrace(renderedRoute, {phase: 'render'}).forEach(emitEvent);
   });
   try {
     if (!session.model) throw new Error(modelFallbackMessage ?? '原生 Pi AgentSession 没有可用模型');
@@ -256,6 +271,9 @@ async function runNative(projectId: string, prompt: string, options: NativeRunOp
     await session.waitForIdle();
     await runGuardIfNeeded({session, creatingProject: Boolean(options.creatingProject), completedTools});
     const updated = await getProject(projectId);
+    if (!completedTools.some((tool) => tool === 'render_preview' || tool === 'render_final')) {
+      buildRenderRouteTrace(routeRenderBackend(updated.spec), {phase: 'plan'}).forEach(emitEvent);
+    }
     const response = assistantText(session.messages.slice(turnMessageStart));
     const terminalError = session.state.errorMessage;
     if (terminalError) {

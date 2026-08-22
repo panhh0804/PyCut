@@ -8,10 +8,12 @@ import {rippleReorderScene} from '@/lib/video-spec/timeline';
 interface TimelineEditorProps {
   spec: VideoSpec;
   selectedSceneId: string;
+  selectedAudioClipId: string | null;
   playheadFrame: number;
   playing: boolean;
   disabled: boolean;
   onSelect: (sceneId: string) => void;
+  onSelectAudioClip: (clipId: string, startFrame: number) => void;
   onSeek: (frame: number) => void;
   onTogglePlayback: () => void;
   onPatch: (intent: string, patch: PatchOperation[]) => void;
@@ -27,17 +29,30 @@ interface DragState {sceneId: string; trackId: string; mode: DragMode; startX: n
 const visualKinds = new Set<TimelineTrack['kind']>(['video', 'overlay']);
 
 export function TimelineEditor(props: TimelineEditorProps) {
-  const {spec, selectedSceneId, playheadFrame, playing, disabled, onSelect, onSeek, onTogglePlayback, onPatch, onSplit, onDuplicate, onDelete, onUndo} = props;
+  const {spec, selectedSceneId, selectedAudioClipId, playheadFrame, playing, disabled, onSelect, onSelectAudioClip, onSeek, onTogglePlayback, onPatch, onSplit, onDuplicate, onDelete, onUndo} = props;
   const [zoom, setZoom] = useState(1.35);
   const [snap, setSnap] = useState(true);
   const [drag, setDrag] = useState<DragState | null>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const durationFrames = useMemo(() => spec.editSpec.scenes.reduce((max, scene) => Math.max(max, scene.startFrame + scene.durationFrames), 1), [spec.editSpec.scenes]);
   const durationSeconds = durationFrames / spec.canvas.fps;
   const contentWidth = Math.max(900, durationSeconds * 84 * zoom);
   const tracks = [...spec.editSpec.tracks].sort((a, b) => a.order - b.order);
   const snapFrames = snap ? Math.max(1, Math.round(spec.canvas.fps / 2)) : 1;
   const quantize = useCallback((frame: number) => Math.round(frame / snapFrames) * snapFrames, [snapFrames]);
+
+  useEffect(() => {
+    if (!playing) return;
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+    const playheadX = 156 + playheadFrame / durationFrames * (contentWidth - 156);
+    const visibleStart = scroller.scrollLeft + 176;
+    const visibleEnd = scroller.scrollLeft + scroller.clientWidth - 36;
+    if (playheadX < visibleStart || playheadX > visibleEnd) {
+      scroller.scrollTo({left: Math.max(0, playheadX - scroller.clientWidth * 0.48), behavior: 'auto'});
+    }
+  }, [contentWidth, durationFrames, playheadFrame, playing]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -173,13 +188,13 @@ export function TimelineEditor(props: TimelineEditorProps) {
           <ZoomOut size={13}/><input aria-label="时间线缩放" type="range" min="0.7" max="4" step="0.05" value={zoom} onChange={(event) => setZoom(Number(event.target.value))}/><ZoomIn size={13}/>
         </div>
       </div>
-      <div className="nle-scroll">
+      <div className="nle-scroll" ref={scrollRef}>
         <div className="nle-content" ref={timelineRef} style={{width: contentWidth}}>
           <div className="nle-ruler" onPointerDown={seekFromPointer}>
             <div className="track-spacer">TRACKS</div>
             <div className="ruler-grid">{ticks.map((second) => <span key={second} style={{left: `${second / durationSeconds * 100}%`}}>{formatSeconds(second)}</span>)}</div>
           </div>
-          {tracks.map((track) => <TrackRow key={track.id} track={track} spec={spec} durationFrames={durationFrames} selectedSceneId={selectedSceneId} drag={drag} onBeginDrag={beginDrag} onSelect={onSelect} onSeek={seekFromPointer} onTrackPatch={patchTrack}/>) }
+          {tracks.map((track) => <TrackRow key={track.id} track={track} spec={spec} durationFrames={durationFrames} selectedSceneId={selectedSceneId} selectedAudioClipId={selectedAudioClipId} drag={drag} onBeginDrag={beginDrag} onSelect={onSelect} onSelectAudioClip={onSelectAudioClip} onSeek={seekFromPointer} onTrackPatch={patchTrack}/>) }
           <div className="nle-playhead" style={{left: `calc(156px + ${(playheadFrame / durationFrames) * (contentWidth - 156)}px)`}}><i/><span/></div>
         </div>
       </div>
@@ -187,19 +202,22 @@ export function TimelineEditor(props: TimelineEditorProps) {
   );
 }
 
-function TrackRow({track, spec, durationFrames, selectedSceneId, drag, onBeginDrag, onSelect, onSeek, onTrackPatch}: {
+function TrackRow({track, spec, durationFrames, selectedSceneId, selectedAudioClipId, drag, onBeginDrag, onSelect, onSelectAudioClip, onSeek, onTrackPatch}: {
   track: TimelineTrack;
   spec: VideoSpec;
   durationFrames: number;
   selectedSceneId: string;
+  selectedAudioClipId: string | null;
   drag: DragState | null;
   onBeginDrag: (event: ReactPointerEvent, sceneId: string, mode: DragMode) => void;
   onSelect: (sceneId: string) => void;
+  onSelectAudioClip: (clipId: string, startFrame: number) => void;
   onSeek: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onTrackPatch: (track: TimelineTrack, field: 'visible' | 'muted' | 'solo' | 'locked', value: boolean) => void;
 }) {
   const scenes = spec.editSpec.scenes.filter((scene) => scene.trackId === track.id);
   const audio = spec.editSpec.globalAudio.narrationSegments.filter((segment) => segment.trackId === track.id);
+  const bgmAsset = track.id === 'audio-music' ? spec.assets.find((asset) => asset.id === spec.editSpec.globalAudio.bgmAssetId) : undefined;
   const captionScenes = track.kind === 'caption' ? spec.editSpec.scenes : [];
   const icon = track.kind === 'audio' ? <Volume2 size={13}/> : track.kind === 'caption' ? <Subtitles size={13}/> : track.kind === 'overlay' ? <Layers3 size={13}/> : <Film size={13}/>;
   return (
@@ -225,9 +243,10 @@ function TrackRow({track, spec, durationFrames, selectedSceneId, drag, onBeginDr
             <button className="clip-handle right" type="button" aria-label={`裁切 ${scene.id} 出点`} onPointerDown={(event) => onBeginDrag(event, scene.id, 'trim-end')}/>
           </div>;
         })}
-        {audio.map((segment) => <div key={segment.assetId} className="nle-clip audio-clip" style={{left: `${segment.startFrame / durationFrames * 100}%`, width: `${segment.durationFrames / durationFrames * 100}%`}}>{segment.waveform.map((value, index) => <i key={index} style={{height: `${Math.max(8, value * 88)}%`}}/>)}</div>)}
+        {audio.map((segment) => <button type="button" key={segment.assetId} className={`nle-clip audio-clip ${selectedAudioClipId === segment.assetId ? 'selected' : ''} ${segment.muted ? 'muted' : ''}`} style={{left: `${segment.startFrame / durationFrames * 100}%`, width: `${segment.durationFrames / durationFrames * 100}%`}} title={`${segment.sceneId} · ${segment.muted ? '已静音' : '有声'} · 单击后在 Inspector 设置`} onPointerDown={(event) => event.stopPropagation()} onClick={() => onSelectAudioClip(segment.assetId, segment.startFrame)}>{segment.waveform.map((value, index) => <i key={index} style={{height: `${Math.max(8, value * 88)}%`}}/>)}{segment.muted && <VolumeX className="clip-mute-mark" size={12}/>}</button>)}
+        {bgmAsset && <button type="button" className={`nle-clip audio-clip bgm-clip ${selectedAudioClipId === bgmAsset.id ? 'selected' : ''} ${spec.editSpec.globalAudio.bgmMuted ? 'muted' : ''}`} style={{left: 0, width: '100%'}} title={`${bgmAsset.attribution ?? 'Agent 自主配乐'} · 单击后在 Inspector 设置`} onPointerDown={(event) => event.stopPropagation()} onClick={() => onSelectAudioClip(bgmAsset.id, 0)}>{Array.from({length: 96}, (_, index) => <i key={index} style={{height: `${18 + ((index * 37 + spec.project.renderSeed) % 70)}%`}}/>)}{spec.editSpec.globalAudio.bgmMuted && <VolumeX className="clip-mute-mark" size={12}/>}</button>}
         {captionScenes.map((scene) => <button key={scene.id} type="button" className="nle-clip caption-clip" style={{left: `${scene.startFrame / durationFrames * 100}%`, width: `${scene.durationFrames / durationFrames * 100}%`}} onClick={() => onSelect(scene.id)}>CC · {scene.id}</button>)}
-        {!scenes.length && !audio.length && !captionScenes.length && <span className="empty-track">将素材或镜头拖到这里</span>}
+        {!scenes.length && !audio.length && !bgmAsset && !captionScenes.length && <span className="empty-track">将素材或镜头拖到这里</span>}
       </div>
     </div>
   );

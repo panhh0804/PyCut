@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="color-scheme" content="dark" />
   <meta name="theme-color" content="#07131d" />
-  <title>πCut 项目汇报｜Agentic Video Compiler</title>
+  <title>πCut 项目详细汇报｜Agentic Video Compiler</title>
   <style>
     :root {
       --bg: #07131d;
@@ -858,6 +858,223 @@
     .closing-point b { display:block; color:var(--mint); font:700 13px/1 var(--font-mono); margin-bottom:9px; }
     .closing-point span { color:#d6e6ed; font-size:21px; line-height:1.42; }
 
+    .project-definition {
+      display: grid;
+      grid-template-columns: .84fr 1.16fr;
+      gap: 78px;
+      align-items: center;
+    }
+
+    .definition-copy h2 {
+      margin: 14px 0 24px;
+      font-size: 59px;
+      line-height: 1.08;
+      letter-spacing: -.04em;
+    }
+
+    .definition-copy p {
+      color: #bfd2dc;
+      font-size: 21px;
+      line-height: 1.58;
+    }
+
+    .definition-list {
+      display: grid;
+      gap: 0;
+      border-top: 1px solid var(--line);
+    }
+
+    .definition-item {
+      display: grid;
+      grid-template-columns: 102px 1fr;
+      gap: 20px;
+      padding: 24px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .definition-item b {
+      color: var(--mint);
+      font: 750 15px/1.35 var(--font-mono);
+    }
+
+    .definition-item h3 { margin-bottom: 8px; font-size: 24px; }
+    .definition-item p { color: var(--muted); font-size: 16px; line-height: 1.5; }
+
+    .evolution-layout {
+      display: grid;
+      grid-template-columns: 1fr 92px 1fr;
+      gap: 28px;
+      align-items: stretch;
+      margin-top: 38px;
+    }
+
+    .evolution-side {
+      padding: 30px 32px;
+      border-top: 4px solid var(--coral);
+      background: linear-gradient(180deg, rgba(255,138,99,.10), rgba(10,26,39,.28));
+    }
+
+    .evolution-side.after {
+      border-color: var(--mint);
+      background: linear-gradient(180deg, rgba(66,228,192,.10), rgba(10,26,39,.28));
+    }
+
+    .evolution-side h3 { margin: 10px 0 16px; font-size: 31px; }
+    .evolution-side > p { color: #c5d7df; font-size: 18px; line-height: 1.55; }
+    .evolution-side ul { margin: 22px 0 0; padding-left: 20px; color: var(--muted); font-size: 16px; line-height: 1.68; }
+
+    .evolution-arrow {
+      display: grid;
+      place-items: center;
+      color: var(--mint);
+      font-size: 54px;
+    }
+
+    .learning-line {
+      margin-top: 30px;
+      padding: 18px 24px;
+      border-left: 4px solid var(--blue);
+      color: #d9e8ee;
+      background: var(--blue-soft);
+      font-size: 19px;
+      line-height: 1.5;
+    }
+
+    .runtime-layout {
+      display: grid;
+      grid-template-columns: .88fr 1.12fr;
+      gap: 62px;
+      align-items: center;
+    }
+
+    .runtime-stack { display: grid; gap: 10px; }
+
+    .runtime-layer {
+      display: grid;
+      grid-template-columns: 190px 1fr;
+      gap: 22px;
+      align-items: center;
+      min-height: 68px;
+      padding: 13px 20px;
+      border-left: 3px solid var(--line);
+      background: rgba(13,36,51,.43);
+    }
+
+    .runtime-layer.core { border-color: var(--mint); background: var(--mint-soft); }
+    .runtime-layer.product { border-color: var(--coral); background: var(--coral-soft); }
+    .runtime-layer b { color: #e8f6fb; font-size: 17px; }
+    .runtime-layer span { color: var(--muted); font-size: 15px; line-height: 1.45; }
+
+    .tool-layout {
+      display: grid;
+      grid-template-columns: .76fr 1.24fr;
+      gap: 65px;
+      align-items: center;
+    }
+
+    .tool-groups { display: grid; grid-template-columns: 1fr 1fr; gap: 22px 34px; }
+
+    .tool-group {
+      padding: 20px 0;
+      border-top: 2px solid var(--line);
+    }
+
+    .tool-group b { display:block; color:var(--mint); font:700 13px/1 var(--font-mono); margin-bottom:10px; }
+    .tool-group h3 { margin-bottom: 8px; font-size: 22px; }
+    .tool-group p { color: var(--muted); font-size: 15px; line-height: 1.48; }
+
+    .trace-layout {
+      display: grid;
+      grid-template-columns: 1.12fr .88fr;
+      gap: 46px;
+      min-height: 0;
+    }
+
+    .trace-benefits { display: flex; flex-direction: column; justify-content: center; gap: 18px; }
+
+    .trace-benefit {
+      padding: 0 0 18px 20px;
+      border-left: 2px solid var(--line);
+    }
+
+    .trace-benefit b { color: var(--mint); font: 700 13px/1 var(--font-mono); }
+    .trace-benefit h3 { margin: 7px 0 7px; font-size: 21px; }
+    .trace-benefit p { color: var(--muted); font-size: 14px; line-height: 1.48; }
+
+    .checkpoint-layout {
+      display: grid;
+      grid-template-columns: 1.04fr .96fr;
+      gap: 48px;
+      min-height: 0;
+    }
+
+    .checkpoint-copy { display:flex; flex-direction:column; justify-content:center; }
+    .checkpoint-copy p { color:#bed1da; font-size:18px; line-height:1.58; }
+
+    .risk-table { margin-top:24px; border-top:1px solid var(--line); }
+    .risk-row { display:grid; grid-template-columns:148px 1fr; gap:18px; padding:17px 0; border-bottom:1px solid var(--line); }
+    .risk-row b { color:var(--mint); font-size:15px; }
+    .risk-row.high b { color:var(--coral); }
+    .risk-row span { color:#c7d9e1; font-size:15px; line-height:1.45; }
+
+    .canvas-shift {
+      display: grid;
+      grid-template-columns: .92fr 1.08fr;
+      gap: 70px;
+      align-items: center;
+    }
+
+    .mode-compare { display:grid; gap:22px; }
+
+    .mode-block {
+      padding: 28px 30px;
+      border-left: 4px solid var(--coral);
+      background: var(--coral-soft);
+    }
+
+    .mode-block.free { border-color:var(--mint); background:var(--mint-soft); }
+    .mode-block b { color:var(--coral); font:700 13px/1 var(--font-mono); }
+    .mode-block.free b { color:var(--mint); }
+    .mode-block h3 { margin:9px 0 10px; font-size:27px; }
+    .mode-block p { color:#bfd1da; font-size:17px; line-height:1.52; }
+
+    .canvas-gallery {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      align-items: stretch;
+    }
+
+    .canvas-shot { margin:0; overflow:hidden; border:1px solid rgba(135,190,217,.22); border-radius:16px; background:#06121a; }
+    .canvas-shot img { display:block; width:100%; aspect-ratio:16/7.4; object-fit:cover; }
+    .canvas-shot figcaption { min-height:78px; padding:15px 18px; color:#c9dbe3; font-size:14px; line-height:1.45; }
+
+    .layer-legend {
+      display:flex;
+      flex-wrap:wrap;
+      gap:9px;
+      margin-top:22px;
+    }
+
+    .layer-legend span {
+      padding:7px 10px;
+      border-bottom:1px solid var(--line);
+      color:var(--muted);
+      font:13px/1 var(--font-mono);
+    }
+
+    .capability-summary {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 28px;
+      margin-top: 20px;
+      padding-top: 20px;
+      border-top: 1px solid var(--line);
+    }
+
+    .capability-summary h3 { color:var(--mint); font:750 30px/1 var(--font-mono); margin-bottom:10px; }
+    .capability-summary p { color:var(--muted); font-size:15px; line-height:1.48; }
+
     #controls {
       position: fixed;
       right: max(18px, env(safe-area-inset-right));
@@ -978,20 +1195,42 @@
       <img class="hero-bg" src="picut-slides-assets/studio-final-ui.png" alt="πCut 完整视频编辑工作台界面" />
       <header class="slide-head">
         <div class="brand"><span class="brand-mark">π</span><span>πCut</span></div>
-        <span class="section-id">PROJECT REPORT · 2026.08</span>
+        <span class="section-id">DETAILED PROJECT REPORT · 2026.08</span>
       </header>
       <div class="slide-main hero-main">
         <div>
           <div class="hero-symbol">π</div>
           <h1 class="hero-title">Agentic<br />Video Compiler</h1>
-          <p class="hero-subtitle">让原生 Pi 负责创作决策，让 VideoSpec 负责可审计状态，让双渲染引擎负责确定性交付。</p>
+          <p class="hero-subtitle">一套把原生 Pi Agent、自主工具调用、自由视频画布、传统剪辑交互和确定性交付连接在一起的视频工程系统。</p>
         </div>
         <div class="hero-meta">
           <span class="meta-label">项目汇报</span>
-          从创作意图到 MP4<br />一套人机协作的视频工程系统
+          项目详细汇报<br />产品能力、关键设计与工程闭环
         </div>
       </div>
       <footer class="slide-foot"><strong>πCut / 本地项目实况</strong><span>01</span></footer>
+    </section>
+
+    <section class="slide" data-title="πCut 不是一个视频聊天框，而是一套视频工程环境">
+      <header class="slide-head">
+        <div class="brand"><span class="brand-mark">π</span><span>πCut</span></div>
+        <span class="section-id">PROJECT · WHAT WE ARE BUILDING</span>
+      </header>
+      <div class="slide-main project-definition">
+        <div class="definition-copy">
+          <div class="eyebrow">项目定义</div>
+          <h2>πCut 不是一个<br />视频聊天框</h2>
+          <p>它是一套由 Agent 驱动、但仍然允许人精确介入的视频工程环境。用户可以用自然语言提出目标，也可以在时间线、Inspector 和画布中直接编辑；两种操作最终都会进入同一份可版本化 VideoSpec。</p>
+          <p style="margin-top:18px">项目的重点不是替用户“一键生成一个不可修改的视频”，而是让生成、编辑、校验、恢复和交付处于同一个连续工作流。</p>
+        </div>
+        <div class="definition-list">
+          <div class="definition-item"><b>AGENT</b><div><h3>原生 Pi 负责理解和行动</h3><p>保留完整 AgentSession、工具循环、Skills、Extensions、会话历史、自动重试和 compaction。</p></div></div>
+          <div class="definition-item"><b>WORKSPACE</b><div><h3>剪辑软件界面承载人机协作</h3><p>Director、Canvas、Timeline、Inspector、审批和导出不是装饰，而是 Agent 与用户共享项目状态的表面。</p></div></div>
+          <div class="definition-item"><b>COMPILER</b><div><h3>VideoSpec 把意图变成工程状态</h3><p>任何修改都对应 revision 与 ChangeSet，再经过 G1—G7 和双引擎编译为可追踪交付物。</p></div></div>
+          <div class="definition-item"><b>DELIVERY</b><div><h3>最终结果包含证据，而不只有 MP4</h3><p>字幕、VideoSpec、资产清单、渲染清单和 SHA-256 共同说明这条视频如何产生。</p></div></div>
+        </div>
+      </div>
+      <footer class="slide-foot"><strong>一句话：Agent 负责创作，πCut 负责让创作成为可编辑、可验证的工程</strong><span>02</span></footer>
     </section>
 
     <section class="slide" data-title="生成，不等于制作系统">
@@ -1070,6 +1309,45 @@
       <footer class="slide-foot"><strong>一个界面承载 Observe → Tool → Validate → Deliver</strong><span>04</span></footer>
     </section>
 
+    <section class="slide" data-title="关键取舍：手工 Agent 框架越完整，原生能力反而越容易被裁掉" data-theme="coral">
+      <header class="slide-head">
+        <div class="brand"><span class="brand-mark">π</span><span>πCut</span></div>
+        <span class="section-id">DESIGN CHOICE · NATIVE AGENT</span>
+      </header>
+      <div class="slide-main">
+        <div class="eyebrow coral">项目中的第一次关键转向</div>
+        <h2 class="title-lg" style="margin-top:13px">手工设置得越多，Agent 反而越容易失去原生能力</h2>
+        <p class="lede" style="font-size:21px;margin-top:18px">早期方案希望通过手工 planner、固定提示、工具白名单和前端状态机让行为更可控。但这些层一旦替代了 Pi 自己的运行时，就会切断 Skills、Extensions、工具循环、项目上下文和会话恢复，使前端里的 Agent 只剩“模型聊天”。</p>
+        <div class="evolution-layout">
+          <article class="evolution-side">
+            <div class="meta-label coral">EARLY APPROACH</div>
+            <h3>框架替 Agent 做决定</h3>
+            <p>宿主先判断用户意图，再选择固定动作或模板，把模型限制在一条预先写好的路径里。</p>
+            <ul>
+              <li>关键词 Planner 与正则 Patch 容易把复杂指令压扁</li>
+              <li>工具 allowlist 可能裁掉 Extension 和原生 coding tools</li>
+              <li>短请求生命周期让长任务经常“只做一半”</li>
+              <li>前端自行拼装历史，无法恢复完整 AgentSession</li>
+            </ul>
+          </article>
+          <div class="evolution-arrow">→</div>
+          <article class="evolution-side after">
+            <div class="meta-label mint">CURRENT APPROACH</div>
+            <h3>框架服务 Agent 行动</h3>
+            <p>完整 Pi AgentSession 保留规划权；πCut 只提供视频工具、结构化状态、人机交互和交付约束。</p>
+            <ul>
+              <li>DefaultResourceLoader 加载 AGENTS、Skills 与 Extensions</li>
+              <li>原生工具循环持续到 agent_settled，而不是看到首段文本就结束</li>
+              <li>正确 cwd、Project Trust、模型和 thinking 配置可对账</li>
+              <li>后台 Job 与 transcript 让任务可持续、可恢复、可重试</li>
+            </ul>
+          </article>
+        </div>
+        <div class="learning-line"><strong>得到的结论：</strong>产品需要约束的是状态变更、权限和交付契约，而不是替 Agent 写一套简化的大脑。</div>
+      </div>
+      <footer class="slide-foot"><strong>这次转向没有削弱框架，而是重新定义了框架应该负责什么</strong><span>06</span></footer>
+    </section>
+
     <section class="slide" data-title="Agent 是原生运行时，不是包装器">
       <header class="slide-head">
         <div class="brand"><span class="brand-mark">π</span><span>πCut</span></div>
@@ -1092,6 +1370,53 @@
         </div>
       </div>
       <footer class="slide-foot"><strong>Pi 负责“怎么做”；πCut 约束“修改必须如何落地”</strong><span>05</span></footer>
+    </section>
+
+    <section class="slide" data-title="现在的分工：Pi 保留完整大脑，πCut 提供视频世界">
+      <header class="slide-head">
+        <div class="brand"><span class="brand-mark">π</span><span>πCut</span></div>
+        <span class="section-id">RUNTIME · RESPONSIBILITY BOUNDARY</span>
+      </header>
+      <div class="slide-main runtime-layout">
+        <div>
+          <div class="eyebrow">当前责任边界</div>
+          <h2 class="title-lg" style="font-size:53px;margin-top:12px">Pi 保留完整大脑，<br />πCut 提供视频世界</h2>
+          <p class="lede" style="font-size:20px;margin-top:22px">我们没有再写一套“视频 Agent 大脑”。原生 Pi 继续负责理解需求、读取技能、选择工具、观察结果、修复错误和决定下一步；πCut 负责把视频领域变成它能够可靠行动的环境。</p>
+          <p class="small" style="margin-top:20px">这样的边界既保留了 Agent 的泛化能力，也让视频编辑中的 revision、审批、素材许可、质量门和最终导出仍然可控。</p>
+        </div>
+        <div class="runtime-stack">
+          <div class="runtime-layer core"><b>Native Pi AgentSession</b><span>原生 system prompt、tool loop、retry、compaction、steering、follow-up 与 settled 生命周期</span></div>
+          <div class="runtime-layer"><b>ResourceLoader</b><span>正确 cwd 下加载项目 AGENTS、23 个技能资源、Extensions、Prompt Templates 与设置</span></div>
+          <div class="runtime-layer"><b>Native tools</b><span>保留 read、bash、edit、write 等 coding tools，不通过 πCut allowlist 裁剪</span></div>
+          <div class="runtime-layer product"><b>14 video tools</b><span>观察 VideoSpec、分镜、修改镜头、搜索素材、TTS、质量校验、预览和正式渲染</span></div>
+          <div class="runtime-layer product"><b>Studio context</b><span>把 selectedSceneId、播放头、Inspector tab/field、revision 和审批状态注入本轮</span></div>
+          <div class="runtime-layer product"><b>Durable delivery</b><span>后台 Job、SSE 轨迹、ChangeSet、G1—G7、双引擎与 manifests</span></div>
+        </div>
+      </div>
+      <footer class="slide-foot"><strong>πCut 不替 Pi 规划；πCut 让 Pi 看得见、改得动、交得出</strong><span>08</span></footer>
+    </section>
+
+    <section class="slide" data-title="框架的价值体现在工具、上下文、交互和安全边界">
+      <header class="slide-head">
+        <div class="brand"><span class="brand-mark">π</span><span>πCut</span></div>
+        <span class="section-id">HOST · WHAT πCUT ADDS</span>
+      </header>
+      <div class="slide-main tool-layout">
+        <div>
+          <div class="eyebrow">πCut 的宿主价值</div>
+          <h2 class="title-lg" style="font-size:51px;margin-top:12px">不是控制 Agent，<br />而是提供可靠行动条件</h2>
+          <p class="lede" style="font-size:20px;margin-top:22px">当模型需要“把第二幕缩短、换成真实积雨云、保留字幕节奏并重新导出”时，真正困难的不是生成一句回答，而是让它准确看见当前项目、选择合适工具、提交可撤销修改，并证明最终结果来自正确 revision。</p>
+        </div>
+        <div class="tool-groups">
+          <div class="tool-group"><b>OBSERVE</b><h3>先读工程，再做判断</h3><p>`get_video_spec` 暴露镜头、轨道、质量门、待审批项和 UI 选区，避免 Agent 在模糊上下文中猜“这个”。</p></div>
+          <div class="tool-group"><b>CREATE & EDIT</b><h3>强类型修改而非文本暗示</h3><p>`draft_storyboard`、`update_scene`、`apply_video_patch` 与结构工具直接写入真实消费字段，并形成 revision。</p></div>
+          <div class="tool-group"><b>MEDIA & AUDIO</b><h3>外部能力也进入工程状态</h3><p>素材搜索、可信下载域、许可署名、本地资产化与可选 TTS 都通过独立工具和安全边界完成。</p></div>
+          <div class="tool-group"><b>VALIDATE & RENDER</b><h3>修改之后必须证明可交付</h3><p>运行时守卫要求已提交修改的回合调用 `validate_spec`；正式渲染仍需要明确授权。</p></div>
+          <div class="tool-group"><b>HUMAN CONTROL</b><h3>高风险结构变更等待确认</h3><p>新增、删除、重排和整体重构进入 checkpoint；文字、颜色、位置和普通动画可以直接提交。</p></div>
+          <div class="tool-group"><b>RECOVERY</b><h3>失败是可观察状态</h3><p>不静默替换成示例工程，也不谎报完成；保留失败原因、transcript 和当前 VideoSpec 以便重试。</p></div>
+        </div>
+      </div>
+      <footer class="slide-foot"><strong>宿主层越清楚地提供环境，Agent 越能把能力用在真正的视频问题上</strong><span>09</span></footer>
     </section>
 
     <section class="slide" data-title="VideoSpec 是唯一事实源">
@@ -1131,6 +1456,31 @@
       <footer class="slide-foot"><strong>版本、修订与 ChangeSet 让人机协作有共同语境</strong><span>06</span></footer>
     </section>
 
+    <section class="slide" data-title="Agent 轨迹把自主过程从黑盒变成产品能力">
+      <header class="slide-head">
+        <div class="brand"><span class="brand-mark">π</span><span>πCut</span></div>
+        <span class="section-id">TRACE · OBSERVABLE AUTONOMY</span>
+      </header>
+      <div class="slide-main trace-layout">
+        <figure class="image-frame" style="margin:0">
+          <img src="picut-slides-assets/pi-agent-generated-hydrothermal-vent.png" alt="πCut 深海视频项目与左侧 Agent 轨迹" />
+          <figcaption class="image-caption">真实运行：观察 4 个镜头、识别真实 B-roll、判断稳定性、记录路由与正式导出</figcaption>
+        </figure>
+        <div class="trace-benefits">
+          <div>
+            <div class="eyebrow">Agent 轨迹</div>
+            <h2 class="title-lg" style="font-size:46px;margin-top:12px">自主过程不再是<br />一个旋转的加载图标</h2>
+            <p class="small" style="margin-top:16px">轨迹展示 Pi 正在观察什么、调用了哪些工具、生成了哪个 revision、质量门是否通过、选择了哪个引擎，以及失败后是否发生 fallback。</p>
+          </div>
+          <div class="trace-benefit"><b>01 · USER TRUST</b><h3>用户知道 Agent 正在做什么</h3><p>创建、编辑、素材检索、校验和渲染都有阶段与结果，长任务不再只能盲等。</p></div>
+          <div class="trace-benefit"><b>02 · ENGINEERING DEBUG</b><h3>问题可以定位到真实运行环节</h3><p>能区分是模型决策、工具参数、素材许可、VideoSpec、质量门还是渲染 adapter 出错。</p></div>
+          <div class="trace-benefit"><b>03 · RECOVERY</b><h3>轨迹与 transcript 支撑恢复</h3><p>断线或进程中断后，可以从 jobId、原生 session 与当前 revision 继续，而不是重新猜测上下文。</p></div>
+          <div class="trace-benefit"><b>04 · DELIVERY EVIDENCE</b><h3>路由和交付有可追溯依据</h3><p>selected、scores、confidence、reasons、fallback 和 executed 会写入 RenderManifest。</p></div>
+        </div>
+      </div>
+      <footer class="slide-foot"><strong>可观察性不是调试附属品，而是 Agent 产品建立信任的核心界面</strong><span>11</span></footer>
+    </section>
+
     <section class="slide" data-title="人和 Agent 编辑的是同一条时间线">
       <header class="slide-head">
         <div class="brand"><span class="brand-mark">π</span><span>πCut</span></div>
@@ -1152,6 +1502,75 @@
         </div>
       </div>
       <footer class="slide-foot"><strong>人负责精确手感；Agent 负责跨镜头理解与批量决策</strong><span>07</span></footer>
+    </section>
+
+    <section class="slide" data-title="高风险结构修改进入 Human Checkpoint，而不是悄悄发生">
+      <header class="slide-head">
+        <div class="brand"><span class="brand-mark">π</span><span>πCut</span></div>
+        <span class="section-id">CONTROL · HUMAN CHECKPOINT</span>
+      </header>
+      <div class="slide-main checkpoint-layout">
+        <div class="checkpoint-copy">
+          <div class="eyebrow coral">人类控制权</div>
+          <h2 class="title-lg" style="font-size:48px;margin:12px 0 20px">Agent 可以提出重构，<br />但不能悄悄改变故事结构</h2>
+          <p>人机协作不是把所有操作都拦住审批，也不是把项目完全交给 Agent。πCut 根据变更风险划分执行方式：普通可逆编辑直接提交，提高协作效率；会改变视频叙事结构的动作先形成完整提案，再由用户批准或拒绝。</p>
+          <div class="risk-table">
+            <div class="risk-row"><b>直接提交</b><span>文字、颜色、位置、时长、普通动画、效果和 Inspector 字段调整；全部形成 ChangeSet，可继续撤销。</span></div>
+            <div class="risk-row high"><b>等待审批</b><span>新增镜头、删除镜头、完整重排和整体结构重构；界面展示影响范围与目标 revision。</span></div>
+            <div class="risk-row"><b>继续可用</b><span>等待 checkpoint 时，画布、播放、时间线和 Inspector 不被锁死，用户仍能观察项目。</span></div>
+          </div>
+        </div>
+        <figure class="image-frame" style="margin:0">
+          <img src="picut-slides-assets/studio-approval.png" alt="πCut 左下角显示删除镜头的人类审批检查点" />
+          <figcaption class="image-caption">删除第 5 幕属于高风险结构操作，必须由用户确认提交</figcaption>
+        </figure>
+      </div>
+      <footer class="slide-foot"><strong>把审批放在真正高风险的地方，既保留 Agent 自主性，也保留用户最终控制权</strong><span>13</span></footer>
+    </section>
+
+    <section class="slide" data-title="第二次关键取舍：组件库从创作边界变成可选积木" data-theme="coral">
+      <header class="slide-head">
+        <div class="brand"><span class="brand-mark">π</span><span>πCut</span></div>
+        <span class="section-id">DESIGN CHOICE · FREE CANVAS</span>
+      </header>
+      <div class="slide-main canvas-shift">
+        <div>
+          <div class="eyebrow coral">项目中的第二次关键转向</div>
+          <h2 class="title-lg" style="font-size:52px;margin-top:12px">组件库提高了成功率，<br />也让视频越来越像模板</h2>
+          <p class="lede" style="font-size:20px;margin-top:20px">早期将 TextHero、SplitScreen、DynamicChart、CaptionKaraoke 和 MediaBroll 作为 Agent 的主要选择空间。这样很容易得到“能渲染”的结果，但不同主题会反复落入相似构图、相似节奏与相似信息卡，Agent 的视觉判断被五种模板提前决定。</p>
+          <p class="small" style="margin-top:17px">因此我们没有删除组件库，而是改变它的地位：组件继续作为高效、可靠的预制积木；默认创作空间升级为 SceneCanvas，自由图层成为 Agent 的第一等表达能力。</p>
+        </div>
+        <div class="mode-compare">
+          <article class="mode-block"><b>BEFORE · COMPONENT FIRST</b><h3>先选模板，再填内容</h3><p>组件定义了画面骨架。Agent 能改文案、颜色和有限参数，但难以改变信息的空间关系，视频容易形成统一的“卡片感”。</p></article>
+          <article class="mode-block free"><b>NOW · CANVAS FIRST</b><h3>先设计画面，再决定是否复用组件</h3><p>Agent 可以自由放置文字、指标、徽标、公式、代码、图形、线条、图表、图像与粒子；预制组件只在它确实适合时被选择。</p></article>
+          <div class="learning-line" style="margin-top:0"><strong>设计原则：</strong>可靠性来自 Schema、质量门和 renderer adapter，不必通过限制创作表达来获得。</div>
+        </div>
+      </div>
+      <footer class="slide-foot"><strong>自由画布扩大表达空间；组件库保留效率，但不再决定所有视频长什么样</strong><span>14</span></footer>
+    </section>
+
+    <section class="slide" data-title="SceneCanvas 已经进入真实双引擎渲染链路">
+      <header class="slide-head">
+        <div class="brand"><span class="brand-mark">π</span><span>πCut</span></div>
+        <span class="section-id">CANVAS · COMPOSITION FREEDOM</span>
+      </header>
+      <div class="slide-main">
+        <div style="display:flex;justify-content:space-between;align-items:end;margin-bottom:26px">
+          <div style="max-width:790px"><div class="eyebrow">SceneCanvas</div><h2 class="title-lg" style="font-size:50px;margin-top:10px">自由画布不是概念，它已经被同一份 VideoSpec 编译和渲染</h2></div>
+          <p class="small" style="max-width:440px;text-align:right">下方来自当前 `freedom-canvas-e2e-0822` 项目的真实 Remotion 输出。三个镜头均使用 SceneCanvas，而不是五种预制卡片组件。</p>
+        </div>
+        <div class="canvas-gallery">
+          <figure class="canvas-shot"><img src="picut-slides-detailed-assets/freedom-remotion-01.png" alt="自由画布中太阳风抵达场景" /><figcaption><strong>镜头 01 · 太阳风抵达</strong><br />shape、particles、text、metric 和 badge 使用独立坐标与入场时序构成画面。</figcaption></figure>
+          <figure class="canvas-shot"><img src="picut-slides-detailed-assets/freedom-remotion-02.png" alt="自由画布中磁力线导航场景" /><figcaption><strong>镜头 02 · 磁力线导航</strong><br />自由组合 shape、line、particles、badge、formula 与 text，形成不同于卡片模板的解释结构。</figcaption></figure>
+        </div>
+        <div class="capability-summary">
+          <div><h3>≤ 40</h3><p>每个 SceneCanvas 最多容纳 40 个独立图层，同时保持 Schema 可校验。</p></div>
+          <div><h3>10 类</h3><p>文字、徽标、指标、公式、代码、图形、线条、图表、图像和粒子等表达元素。</p></div>
+          <div><h3>5 维</h3><p>坐标、尺寸、样式、入场时序与镜头运动可以分别定义，而不是绑定在模板插槽中。</p></div>
+          <div><h3>2 引擎</h3><p>同一 SceneCanvas 可编译到 Remotion 帧级动画与 HyperFrames DOM/GSAP 时间线。</p></div>
+        </div>
+      </div>
+      <footer class="slide-foot"><strong>Agent 获得更自由的构图空间，同时仍受 VideoSpec、质量门和双引擎契约约束</strong><span>15</span></footer>
     </section>
 
     <section class="slide" data-title="会话、任务与修订都能恢复">
@@ -1301,13 +1720,13 @@
         <div>
           <div class="eyebrow">一句话总结</div>
           <h2 class="closing-title" style="margin-top:20px">把生成，<br /><span class="outline">变成工程。</span></h2>
-          <p class="lede" style="margin-top:30px">πCut 的价值，不只是让 Agent 做视频；而是让创作过程有状态、让自动决策有证据、让最终交付可复现。</p>
+          <p class="lede" style="margin-top:30px">πCut 的价值，不只是让 Agent 生成视频；而是保留原生智能，为它提供可行动的视频环境，再把创作过程沉淀为可编辑状态、可观察轨迹与可复现交付。</p>
         </div>
         <div class="closing-points">
-          <div class="closing-point"><b>01 · AGENT</b><span>原生 Pi 负责高层创作与工具编排</span></div>
-          <div class="closing-point"><b>02 · SPEC</b><span>VideoSpec 连接人、Agent、时间线与渲染</span></div>
-          <div class="closing-point"><b>03 · DELIVERY</b><span>双引擎 + G1—G7 把结果变成可验证产物</span></div>
-          <div class="tag-row" style="margin-top:8px"><span class="tag">下一步：用真实 brief 验证公网工作流</span></div>
+          <div class="closing-point"><b>01 · NATIVE AGENT</b><span>原生 Pi 保留规划、工具循环、Skills 与会话能力</span></div>
+          <div class="closing-point"><b>02 · SHARED WORKSPACE</b><span>剪辑界面让人和 Agent 在同一 VideoSpec 上协作</span></div>
+          <div class="closing-point"><b>03 · FREE CANVAS</b><span>SceneCanvas 扩大创作空间，组件成为可选积木</span></div>
+          <div class="closing-point"><b>04 · VERIFIED DELIVERY</b><span>轨迹、双引擎与 G1—G7 把结果变成可验证产物</span></div>
         </div>
       </div>
       <footer class="slide-foot"><strong>πCut · Agentic Video Compiler</strong><span>13</span></footer>
@@ -1316,7 +1735,7 @@
 
   <nav id="controls" aria-label="演示文稿导航">
     <button class="control-btn" id="prev" type="button" aria-label="上一页" title="上一页（←）">←</button>
-    <span id="counter" aria-label="当前页码">01 / 13</span>
+    <span id="counter" aria-label="当前页码">01 / 21</span>
     <button class="control-btn" id="next" type="button" aria-label="下一页" title="下一页（→ / Space）">→</button>
     <button class="control-btn" id="overviewBtn" type="button" aria-label="打开总览" title="总览（O）">▦</button>
     <button class="control-btn" id="fullscreenBtn" type="button" aria-label="全屏" title="全屏（F）">⛶</button>
@@ -1367,6 +1786,8 @@
       }
 
       slides.forEach((slide, i) => {
+        const footerNumber = slide.querySelector('.slide-foot > span:last-child');
+        if (footerNumber) footerNumber.textContent = String(i + 1).padStart(2, '0');
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'overview-card';

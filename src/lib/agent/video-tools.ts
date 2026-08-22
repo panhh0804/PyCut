@@ -31,6 +31,7 @@ export const PICUT_AGENT_TOOL_NAMES = [
   'validate_spec',
   'search_media',
   'synthesize_narration',
+  'compose_bgm',
   'render_preview',
   'render_final',
 ] as const;
@@ -41,6 +42,7 @@ const componentType = Type.Union([
   Type.Literal('DynamicChart'),
   Type.Literal('CaptionKaraoke'),
   Type.Literal('MediaBroll'),
+  Type.Literal('MediaClip'),
   Type.Literal('SceneCanvas'),
 ]);
 
@@ -54,8 +56,9 @@ const canvasLayerType = Type.Object({
   id: Type.String({pattern: '^[a-zA-Z0-9-_]+$', minLength: 1, maxLength: 80}),
   type: Type.Union([
     Type.Literal('text'), Type.Literal('badge'), Type.Literal('metric'), Type.Literal('formula'), Type.Literal('code'),
-    Type.Literal('shape'), Type.Literal('line'), Type.Literal('chart'), Type.Literal('image'), Type.Literal('particles'),
-  ]),
+    Type.Literal('shape'), Type.Literal('line'), Type.Literal('chart'), Type.Literal('image'), Type.Literal('video'), Type.Literal('particles'),
+    Type.Literal('group'), Type.Literal('svg'), Type.Literal('mask'), Type.Literal('icon'), Type.Literal('gradientMesh'), Type.Literal('noise'), Type.Literal('subComposition'),
+  ], {description: '优先选择承载信息的图层。shape/line/particles 只能承担框定、连接、编码或引导视线等明确职责，不能作为默认填充。'}),
   x: Type.Number({minimum: -100, maximum: 200, description: '相对画布百分比；允许负值和超过100以创建安全出血与画外入场'}),
   y: Type.Number({minimum: -100, maximum: 200, description: '相对画布百分比；允许负值和超过100以创建安全出血与画外入场'}),
   width: Type.Number({minimum: 0.1, maximum: 200}),
@@ -63,8 +66,22 @@ const canvasLayerType = Type.Object({
   zIndex: Type.Optional(Type.Integer({minimum: 0, maximum: 100})),
   content: Type.Optional(Type.String({maxLength: 2_000})),
   assetId: Type.Optional(Type.String({minLength: 1, maxLength: 160})),
+  fit: Type.Optional(Type.Union([Type.Literal('cover'), Type.Literal('contain')])),
+  focalX: Type.Optional(Type.Number({minimum: 0, maximum: 100})),
+  focalY: Type.Optional(Type.Number({minimum: 0, maximum: 100})),
+  sourceStartFrame: Type.Optional(Type.Integer({minimum: 0, maximum: 100_000})),
+  playbackRate: Type.Optional(Type.Number({minimum: 0.1, maximum: 5})),
+  volumeDb: Type.Optional(Type.Number({minimum: -60, maximum: 6})),
+  loop: Type.Optional(Type.Boolean()),
+  muted: Type.Optional(Type.Boolean()),
   labels: Type.Optional(Type.Array(Type.String({maxLength: 48}), {maxItems: 12})),
   values: Type.Optional(Type.Array(Type.Number(), {maxItems: 12})),
+  chartType: Type.Optional(Type.Union([Type.Literal('bar'), Type.Literal('line'), Type.Literal('area'), Type.Literal('donut'), Type.Literal('scatter'), Type.Literal('timeline'), Type.Literal('network'), Type.Literal('flow'), Type.Literal('map')])),
+  memberIds: Type.Optional(Type.Array(Type.String({minLength: 1, maxLength: 80}), {maxItems: 24})),
+  path: Type.Optional(Type.String({maxLength: 8_000})),
+  viewBox: Type.Optional(Type.String({maxLength: 120})),
+  icon: Type.Optional(Type.Union([Type.Literal('cloud'), Type.Literal('sun'), Type.Literal('droplet'), Type.Literal('arrow'), Type.Literal('check'), Type.Literal('sparkles'), Type.Literal('globe'), Type.Literal('atom'), Type.Literal('play')])),
+  maskShape: Type.Optional(Type.Union([Type.Literal('rounded'), Type.Literal('circle'), Type.Literal('diagonal'), Type.Literal('hexagon')])),
   style: Type.Optional(Type.Object({
     color: Type.Optional(hexColorType),
     backgroundColor: Type.Optional(hexColorType),
@@ -108,7 +125,7 @@ const canvasDesignType = Type.Object({
     panX: Type.Optional(Type.Number({minimum: -30, maximum: 30})),
     panY: Type.Optional(Type.Number({minimum: -30, maximum: 30})),
   })),
-  layers: Type.Array(canvasLayerType, {minItems: 1, maxItems: 40}),
+  layers: Type.Array(canvasLayerType, {minItems: 1, maxItems: 40, description: '先建立主标题、证据与阅读顺序，再添加有语义职责的装饰；明确字号、对齐、安全区和逐层 timing。'}),
 });
 
 function textResult(text: string, details?: unknown) {
@@ -205,8 +222,8 @@ export function createVideoTools(projectId: string, directUserPrompt: string, ed
   const draftStoryboard = defineTool({
     name: 'draft_storyboard',
     label: '从零生成分镜',
-    description: '为当前新会话从零生成完整 StorySpec 与 EditSpec。优先用 visualType=canvas + canvas.layers 设计每幕独特的自由构图、排版、图形、公式、代码、图表、粒子和分层运动；预制 hero/split/chart/caption 只在确实合适时使用。不得复用示例内容或机械重复同一种卡片布局。需要实拍素材的镜头填写 mediaQuery，随后调用 search_media。',
-    promptSnippet: '从 brief 生成原创视频；自由 SceneCanvas 是默认表达，预制组件仅是可选积木',
+    description: '为当前新会话从零生成完整 StorySpec 与 EditSpec。按内容选择实拍、图表、公式、代码、关系图解、目的明确的自由 SceneCanvas 或预制组件；自由画布先设计信息层级、阅读顺序、网格、安全区与镜头节奏，形状/线条/粒子只能服务具体内容，不得堆作装饰。相邻镜头应改变构图语法但保持统一视觉系统。需要实拍素材时填写 mediaQuery 并调用 search_media；未要求静音时随后调用 compose_bgm。',
+    promptSnippet: '从 brief 生成原创视频；内容层级先行，素材与图形为叙事服务，禁止重复“文字+发光形状”',
     parameters: Type.Object({
       title: Type.String({minLength: 2, maxLength: 80}),
       logline: Type.String({minLength: 4, maxLength: 240}),
@@ -466,6 +483,25 @@ export function createVideoTools(projectId: string, directUserPrompt: string, ed
     },
   });
 
+  const composeBgm = defineTool({
+    name: 'compose_bgm',
+    label: '自主创作纯音乐 BGM',
+    description: '根据故事主题、节奏和旁白密度生成与整片时长严格一致的原创纯音乐，写入 A2 Music 轨。应解释风格选择；有人声时通常使用 -24 至 -18 dB，并由渲染器自动 ducking。',
+    promptSnippet: '为当前视频自主选择并创作无版权风险的纯音乐底床',
+    parameters: Type.Object({
+      style: Type.Union([Type.Literal('ambient'), Type.Literal('documentary'), Type.Literal('uplifting'), Type.Literal('technology'), Type.Literal('nature'), Type.Literal('minimal')]),
+      direction: Type.String({minLength: 4, maxLength: 240, description: '说明配乐如何服务主题、镜头节奏与旁白'}),
+      tempoBpm: Type.Optional(Type.Number({minimum: 48, maximum: 144})),
+      energy: Type.Optional(Type.Number({minimum: 0, maximum: 1})),
+      gainDb: Type.Optional(Type.Number({minimum: -36, maximum: -8})),
+    }),
+    execute: async (_id, params) => {
+      const {composeProjectBgm} = await import('@/lib/audio/bgm');
+      const result = await composeProjectBgm(projectId, params);
+      return textResult(`已创作 ${result.audio.style} 纯音乐：${result.audio.tempoBpm} BPM，${result.audio.gainDb} dB，已对齐 ${Math.round(result.audio.durationMs / 100) / 10} 秒时间线`, {revision: result.spec.revision, ...result.audio});
+    },
+  });
+
   const renderPreview = defineTool({
     name: 'render_preview',
     label: '渲染预览',
@@ -497,5 +533,5 @@ export function createVideoTools(projectId: string, directUserPrompt: string, ed
     },
   });
 
-  return [getVideoSpec, createProject, draftStoryboard, updateScene, applyVideoPatch, insertScene, reorderScenes, deleteScene, resolveChange, validateSpec, searchMedia, synthesizeNarration, renderPreview, renderFinal];
+  return [getVideoSpec, createProject, draftStoryboard, updateScene, applyVideoPatch, insertScene, reorderScenes, deleteScene, resolveChange, validateSpec, searchMedia, synthesizeNarration, composeBgm, renderPreview, renderFinal];
 }

@@ -6,6 +6,7 @@ export const COMPONENT_TYPES = [
   'DynamicChart',
   'CaptionKaraoke',
   'MediaBroll',
+  'MediaClip',
   'SceneCanvas',
 ] as const;
 
@@ -14,7 +15,7 @@ const optionalAccent = {accentColor: colorSchema.optional()};
 
 const sceneCanvasLayerSchema = z.object({
   id: z.string().regex(/^[a-zA-Z0-9-_]+$/),
-  type: z.enum(['text', 'badge', 'metric', 'formula', 'code', 'shape', 'line', 'chart', 'image', 'particles']),
+  type: z.enum(['text', 'badge', 'metric', 'formula', 'code', 'shape', 'line', 'chart', 'image', 'video', 'particles', 'group', 'svg', 'mask', 'icon', 'gradientMesh', 'noise', 'subComposition']),
   x: z.number().min(-100).max(200),
   y: z.number().min(-100).max(200),
   width: z.number().min(0.1).max(200),
@@ -22,8 +23,22 @@ const sceneCanvasLayerSchema = z.object({
   zIndex: z.number().int().min(0).max(100).default(1),
   content: z.string().max(2_000).optional(),
   assetId: z.string().min(1).optional(),
+  fit: z.enum(['cover', 'contain']).default('cover'),
+  focalX: z.number().min(0).max(100).default(50),
+  focalY: z.number().min(0).max(100).default(50),
+  sourceStartFrame: z.number().int().nonnegative().default(0),
+  playbackRate: z.number().min(0.1).max(5).default(1),
+  volumeDb: z.number().min(-60).max(6).default(-60),
+  loop: z.boolean().default(false),
+  muted: z.boolean().default(true),
   labels: z.array(z.string().max(48)).max(12).optional(),
   values: z.array(z.number().finite()).max(12).optional(),
+  chartType: z.enum(['bar', 'line', 'area', 'donut', 'scatter', 'timeline', 'network', 'flow', 'map']).default('bar'),
+  memberIds: z.array(z.string().min(1)).max(24).default([]),
+  path: z.string().max(8_000).optional(),
+  viewBox: z.string().max(120).default('0 0 100 100'),
+  icon: z.enum(['cloud', 'sun', 'droplet', 'arrow', 'check', 'sparkles', 'globe', 'atom', 'play']).optional(),
+  maskShape: z.enum(['rounded', 'circle', 'diagonal', 'hexagon']).default('rounded'),
   style: z.object({
     color: colorSchema.optional(),
     backgroundColor: colorSchema.optional(),
@@ -48,7 +63,10 @@ const sceneCanvasLayerSchema = z.object({
     intensity: z.number().min(0).max(4).default(1),
   }).default({preset: 'rise', delayFrames: 0, durationFrames: 18, intensity: 1}),
 }).superRefine((layer, context) => {
-  if (layer.type === 'image' && !layer.assetId) context.addIssue({code: 'custom', path: ['assetId'], message: 'image 图层必须引用 assetId'});
+  if ((layer.type === 'image' || layer.type === 'video') && !layer.assetId) context.addIssue({code: 'custom', path: ['assetId'], message: `${layer.type} 图层必须引用 assetId`});
+  if ((layer.type === 'group' || layer.type === 'mask') && !layer.memberIds.length) context.addIssue({code: 'custom', path: ['memberIds'], message: `${layer.type} 必须引用至少一个成员图层`});
+  if (layer.type === 'svg' && !layer.path) context.addIssue({code: 'custom', path: ['path'], message: 'svg 图层必须提供 path'});
+  if (layer.type === 'icon' && !layer.icon) context.addIssue({code: 'custom', path: ['icon'], message: 'icon 图层必须选择受控图标'});
   if (layer.type === 'chart' && (!layer.labels?.length || layer.labels.length !== layer.values?.length)) {
     context.addIssue({code: 'custom', path: ['values'], message: 'chart 图层的 labels 与 values 必须存在且数量一致'});
   }
@@ -81,6 +99,16 @@ export const sceneCanvasPropsSchema = z.object({
       && (layer.x < 0 || layer.y < 0 || layer.x + layer.width > 100 || layer.y + layer.height > 100)) {
       context.addIssue({code: 'custom', path: ['layers', index], message: `${layer.type} 内容图层必须完整位于 0–100% 可视画布内；只有装饰图层可进入出血区`});
     }
+  });
+  const layerIds = new Set(canvas.layers.map((layer) => layer.id));
+  const claimed = new Set<string>();
+  canvas.layers.forEach((layer, index) => {
+    layer.memberIds.forEach((memberId) => {
+      if (!layerIds.has(memberId)) context.addIssue({code: 'custom', path: ['layers', index, 'memberIds'], message: `${layer.id} 引用了不存在的成员 ${memberId}`});
+      if (memberId === layer.id) context.addIssue({code: 'custom', path: ['layers', index, 'memberIds'], message: `${layer.id} 不能包含自身`});
+      if (claimed.has(memberId)) context.addIssue({code: 'custom', path: ['layers', index, 'memberIds'], message: `${memberId} 不能同时属于多个 group/mask`});
+      claimed.add(memberId);
+    });
   });
 });
 
@@ -138,6 +166,27 @@ export const componentPropsSchemas = {
     focalY: z.number().min(0).max(100).default(50),
     ...optionalAccent,
   }).passthrough(),
+  MediaClip: z.object({
+    assetId: z.string().min(1),
+    kicker: z.string().min(1),
+    headline: z.string().min(1),
+    caption: z.string().min(1),
+    credit: z.string().min(1),
+    fit: z.enum(['cover', 'contain']).default('cover'),
+    focalX: z.number().min(0).max(100).default(50),
+    focalY: z.number().min(0).max(100).default(50),
+    sourceStartFrame: z.number().int().nonnegative().default(0),
+    playbackRate: z.number().min(0.1).max(5).default(1),
+    volumeDb: z.number().min(-60).max(6).default(-60),
+    loop: z.boolean().default(false),
+    muted: z.boolean().default(true),
+    startScale: z.number().min(0.5).max(3).default(1.03),
+    endScale: z.number().min(0.5).max(3).default(1.12),
+    panX: z.number().min(-30).max(30).default(-2),
+    panY: z.number().min(-30).max(30).default(0),
+    mask: z.enum(['none', 'rounded', 'circle', 'diagonal']).default('none'),
+    ...optionalAccent,
+  }),
   SceneCanvas: sceneCanvasPropsSchema,
 } satisfies Record<(typeof COMPONENT_TYPES)[number], z.ZodType>;
 
@@ -161,6 +210,9 @@ export const narrationSegmentSchema = z.object({
   durationFrames: z.number().int().positive(),
   sourceDurationMs: z.number().positive(),
   renderedDurationMs: z.number().positive(),
+  muted: z.boolean().default(false),
+  gainDb: z.number().min(-60).max(12).default(0),
+  playbackRate: z.number().min(0.25).max(4).default(1),
   waveform: z.array(z.number().min(0).max(1)).min(16).max(240),
 });
 
@@ -312,6 +364,7 @@ export const videoSpecSchema = z.object({
       }),
       bgmAssetId: z.string().nullable(),
       bgmGainDb: z.number().min(-60).max(6),
+      bgmMuted: z.boolean().default(false),
     }),
   }),
   constraints: z.object({

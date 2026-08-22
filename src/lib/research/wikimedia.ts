@@ -44,13 +44,13 @@ const cleanHtml = (value: unknown) => String(value ?? '')
   .replaceAll(/\s+/g, ' ')
   .trim();
 
-export async function searchCommonsMedia(query: string, limit = 8): Promise<CommonsCandidate[]> {
+async function searchCommonsByType(query: string, limit: number, kind: 'image' | 'video'): Promise<CommonsCandidate[]> {
   const params = new URLSearchParams({
     action: 'query',
     format: 'json',
     formatversion: '2',
     generator: 'search',
-    gsrsearch: `${query} filetype:bitmap`,
+    gsrsearch: `${query} filetype:${kind === 'video' ? 'video' : 'bitmap'}`,
     gsrnamespace: '6',
     gsrlimit: String(Math.min(12, Math.max(1, limit))),
     prop: 'imageinfo',
@@ -68,9 +68,9 @@ export async function searchCommonsMedia(query: string, limit = 8): Promise<Comm
   return (payload.query?.pages ?? []).flatMap((page) => {
     const info = page.imageinfo?.[0];
     const title = page.title ?? '';
-    const downloadUrl = info?.thumburl ?? info?.url;
+    const downloadUrl = kind === 'video' ? info?.url : info?.thumburl ?? info?.url;
     const license = cleanHtml(info?.extmetadata?.LicenseShortName?.value);
-    if (!downloadUrl || !title || !info?.mime?.startsWith('image/') || info.mime.includes('svg') || !license) return [];
+    if (!downloadUrl || !title || !info?.mime?.startsWith(`${kind}/`) || info.mime.includes('svg') || !license) return [];
     return [{
       provider: 'wikimedia' as const,
       title,
@@ -83,6 +83,15 @@ export async function searchCommonsMedia(query: string, limit = 8): Promise<Comm
       description: cleanHtml(info.extmetadata?.ImageDescription?.value) || title.replace(/^File:/, ''),
     }];
   });
+}
+
+export async function searchCommonsMedia(query: string, limit = 8): Promise<CommonsCandidate[]> {
+  const videoLimit = Math.max(2, Math.ceil(limit / 2));
+  const [videos, images] = await Promise.all([
+    searchCommonsByType(query, videoLimit, 'video').catch(() => []),
+    searchCommonsByType(query, limit, 'image'),
+  ]);
+  return [...videos, ...images].slice(0, limit);
 }
 
 interface NoaaSearchResult {
@@ -239,7 +248,7 @@ async function searchLicensedMedia(query: string, limit: number): Promise<MediaS
     try {
       const candidates = await source.search();
       if (candidates.length) return {candidates, warnings};
-      warnings.push(`${source.name} 没有返回带许可元数据的图片`);
+      warnings.push(`${source.name} 没有返回带许可元数据的图片或视频`);
     } catch (error) {
       warnings.push(readableFetchError(source.name, error));
     }
@@ -263,11 +272,12 @@ async function downloadCandidate(projectId: string, candidate: CommonsCandidate,
   if (!response.ok) throw new Error(`素材下载失败：${response.status}`);
   if (!isTrustedDownloadUrl(response.url)) throw new Error('素材下载重定向到了未批准的域名');
   const contentType = response.headers.get('content-type') ?? candidate.mime;
-  if (!contentType.startsWith('image/')) throw new Error('搜索结果不是可用图片');
+  if (!contentType.startsWith('image/') && !contentType.startsWith('video/')) throw new Error('搜索结果不是可用图片或视频');
   const content = Buffer.from(await response.arrayBuffer());
-  if (content.length < 8_000 || content.length > 25_000_000) throw new Error('素材文件大小不在安全范围');
+  const maximumBytes = contentType.startsWith('video/') ? 120_000_000 : 25_000_000;
+  if (content.length < 8_000 || content.length > maximumBytes) throw new Error('素材文件大小不在安全范围');
   const checksum = createHash('sha256').update(content).digest('hex');
-  const extension = contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : 'jpg';
+  const extension = contentType.includes('webm') ? 'webm' : contentType.includes('ogg') ? 'ogv' : contentType.includes('mp4') ? 'mp4' : contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : 'jpg';
   const safeId = projectId.replaceAll(/[^a-zA-Z0-9-_]/g, '-');
   const directory = path.join(process.cwd(), 'public', 'media', safeId);
   await mkdir(directory, {recursive: true});
@@ -275,7 +285,7 @@ async function downloadCandidate(projectId: string, candidate: CommonsCandidate,
   await writeFile(path.join(directory, filename), content);
   return {
     id: `broll-${slot + 1}-${checksum.slice(0, 14)}`,
-    kind: 'image' as const,
+    kind: contentType.startsWith('video/') ? 'video' as const : 'image' as const,
     src: `/media/${safeId}/${filename}`,
     checksum,
     license: candidate.licenseUrl ? `${candidate.license} · ${candidate.licenseUrl}` : candidate.license,
@@ -344,7 +354,7 @@ export async function enrichProjectWithCommonsMedia(projectId: string, queryOver
       const story = spec.storySpec.scenes.find((item) => item.id === scene.id)!;
       const existingTitle = typeof scene.props.title === 'string' ? scene.props.title : story.purpose;
       return [
-        {op: 'replace' as const, path: `/editSpec/scenes/${sceneIndex}/component`, value: 'MediaBroll'},
+        {op: 'replace' as const, path: `/editSpec/scenes/${sceneIndex}/component`, value: asset.kind === 'video' ? 'MediaClip' : 'MediaBroll'},
         {op: 'replace' as const, path: `/editSpec/scenes/${sceneIndex}/props`, value: {
           assetId: asset.id,
           kicker: typeof scene.props.eyebrow === 'string' ? scene.props.eyebrow : typeof scene.props.kicker === 'string' ? scene.props.kicker : 'FIELD VISUAL · VERIFIED SOURCE',
@@ -353,6 +363,16 @@ export async function enrichProjectWithCommonsMedia(projectId: string, queryOver
           credit: `${candidate.artist} · ${candidate.license}`.slice(0, 160),
           focalX: slot === 0 ? 58 : 50,
           focalY: slot === 0 ? 44 : 54,
+          fit: 'cover',
+          sourceStartFrame: 0,
+          playbackRate: 1,
+          muted: true,
+          loop: true,
+          startScale: 1.03,
+          endScale: 1.1,
+          panX: slot === 0 ? -2 : 1.5,
+          panY: 0,
+          mask: 'none',
           accentColor: String(scene.props.accentColor ?? spec.style.tokens.primary),
         }},
       ];

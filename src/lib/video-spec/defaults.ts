@@ -157,7 +157,7 @@ function defaultTracks(): VideoSpec['editSpec']['tracks'] {
     {id: 'video-main', kind: 'video', name: 'V1 · Main', order: 1, visible: true, muted: false, solo: false, locked: false, gainDb: 0},
     {id: 'caption-main', kind: 'caption', name: 'C1 · Captions', order: 2, visible: true, muted: false, solo: false, locked: false, gainDb: 0},
     {id: 'audio-narration', kind: 'audio', name: 'A1 · Narration', order: 3, visible: true, muted: false, solo: false, locked: false, gainDb: 0},
-    {id: 'audio-music', kind: 'audio', name: 'A2 · Music', order: 4, visible: true, muted: false, solo: false, locked: false, gainDb: -18},
+    {id: 'audio-music', kind: 'audio', name: 'A2 · Music', order: 4, visible: true, muted: false, solo: false, locked: false, gainDb: 0},
   ];
 }
 
@@ -208,7 +208,8 @@ export function createDefaultVideoSpec(projectId = 'transformer-60s'): VideoSpec
           sampleRate: 44100,
         },
         bgmAssetId: null,
-        bgmGainDb: -18,
+        bgmGainDb: -12,
+        bgmMuted: false,
       },
     },
     constraints: {maxDurationMs: 180_000, safeAreaPct: 6, loudnessTargetLUFS: -14},
@@ -255,7 +256,7 @@ export function createPendingVideoSpec(projectId: string, brief: string, targetD
       globalAudio: {
         narrationAssetId: null, narrationSegments: [],
         tts: {provider: 'siliconflow', model: 'fnlp/MOSS-TTSD-v0.5', voice: 'FunAudioLLM/CosyVoice2-0.5B:charles', speed: 1.08, gainDb: 0, responseFormat: 'wav', sampleRate: 44100},
-        bgmAssetId: null, bgmGainDb: -18,
+        bgmAssetId: null, bgmGainDb: -12, bgmMuted: false,
       },
     },
     constraints: {maxDurationMs: Math.max(durationMs, 180_000), safeAreaPct: 6, loudnessTargetLUFS: -14},

@@ -1,6 +1,7 @@
 import {NextResponse} from 'next/server';
 import {z} from 'zod';
 import {renderProject} from '@/lib/render/service';
+import {buildRenderRouteTrace} from '@/lib/render/trace';
 import {appendProjectAgentRun, type ProjectAgentRun} from '@/lib/project/store';
 
 export const runtime = 'nodejs';
@@ -24,12 +25,7 @@ export async function POST(request: Request, context: {params: Promise<{projectI
       model: 'picut-render-router-v1',
       executionMode: 'deterministic-router',
       createdAt,
-      events: [
-        {type: 'route_observe', summary: `观察 ${result.routing.scenes.length} 个镜头、音频轨与关键帧`, at: createdAt, status: 'info' as const},
-        ...result.routing.reasons.map((reason) => ({type: 'route_evidence', summary: reason, at: createdAt, status: 'info' as const})),
-        {type: 'route_decision', toolName: 'route_render_backend', summary: `自主选择 ${result.routing.selected === 'remotion' ? 'Remotion' : 'HyperFrames'}，置信度 ${Math.round(result.routing.confidence * 100)}%`, detail: `Remotion ${result.routing.scores.remotion} / HyperFrames ${result.routing.scores.hyperframes}；备用引擎 ${result.routing.fallback}`, at: createdAt, status: 'success' as const},
-        ...(result.routing.fallbackApplied ? [{type: 'route_fallback', toolName: 'render_with_fallback', summary: `首选引擎失败，已自动切换到 ${result.routing.executed === 'remotion' ? 'Remotion' : 'HyperFrames'} 并完成渲染`, detail: result.routing.fallbackReason, at: new Date().toISOString(), status: 'info' as const}] : []),
-      ],
+      events: buildRenderRouteTrace(result.routing, {phase: 'render', at: createdAt}),
     };
     await appendProjectAgentRun(projectId, traceRun);
     return NextResponse.json({...result, traceRun});

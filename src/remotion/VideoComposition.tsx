@@ -5,13 +5,14 @@ import type {ComponentType, VideoSpec} from '../lib/video-spec/schema';
 import {CaptionKaraoke} from './components/CaptionKaraoke';
 import {DynamicChart} from './components/DynamicChart';
 import {MediaBroll} from './components/MediaBroll';
+import {MediaClip} from './components/MediaClip';
 import {SceneCanvas} from './components/SceneCanvas';
 import {SplitScreen} from './components/SplitScreen';
 import {TextHero} from './components/TextHero';
 
 export type VideoCompositionProps = {spec: VideoSpec} & Record<string, unknown>;
 
-const components = {TextHero, SplitScreen, DynamicChart, CaptionKaraoke, MediaBroll, SceneCanvas} satisfies Record<ComponentType, typeof TextHero>;
+const components = {TextHero, SplitScreen, DynamicChart, CaptionKaraoke, MediaBroll, MediaClip, SceneCanvas} satisfies Record<ComponentType, typeof TextHero>;
 
 function keyframed(scene: CompiledScene, property: 'x' | 'y' | 'scale' | 'rotation' | 'opacity', fallback: number, frame: number) {
   const points = scene.keyframes.filter((keyframe) => keyframe.property === property).sort((a, b) => a.frame - b.frame);
@@ -47,14 +48,42 @@ function SceneLayer({scene, spec, Component}: {scene: CompiledScene; spec: Video
 export function VideoComposition({spec}: VideoCompositionProps) {
   const compiled = compileVideoSpec(spec);
   const narration = spec.assets.find((asset) => asset.id === spec.editSpec.globalAudio.narrationAssetId);
+  const bgm = spec.assets.find((asset) => asset.id === spec.editSpec.globalAudio.bgmAssetId);
+  const narrationSegments = spec.editSpec.globalAudio.narrationSegments;
+  const narrationClipsAreDefault = narrationSegments.every((segment) => !segment.muted && segment.gainDb === 0 && segment.playbackRate === 1);
   const narrationTrack = spec.editSpec.tracks.find((track) => track.id === 'audio-narration');
+  const musicTrack = spec.editSpec.tracks.find((track) => track.id === 'audio-music');
   const hasAudioSolo = spec.editSpec.tracks.some((track) => track.kind === 'audio' && track.solo);
   const narrationVolume = !narrationTrack || narrationTrack.muted || (hasAudioSolo && !narrationTrack.solo)
     ? 0
     : 10 ** (narrationTrack.gainDb / 20);
+  const bgmBaseVolume = !musicTrack || musicTrack.muted || (hasAudioSolo && !musicTrack.solo)
+    || spec.editSpec.globalAudio.bgmMuted
+    ? 0
+    : 10 ** ((musicTrack.gainDb + spec.editSpec.globalAudio.bgmGainDb) / 20);
+  const bgmVolume = (frame: number) => {
+    const lastFrame = Math.max(1, compiled.durationInFrames - 1);
+    const fadeInFrames = Math.max(1, Math.min(spec.canvas.fps, Math.floor(lastFrame / 3)));
+    const fadeOutFrames = Math.max(1, Math.min(spec.canvas.fps * 2, Math.floor(lastFrame / 3)));
+    const fadeIn = interpolate(frame, [0, fadeInFrames], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
+    const fadeOut = interpolate(frame, [Math.max(0, lastFrame - fadeOutFrames), lastFrame], [1, 0], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
+    const narrationActive = Boolean(narration?.src)
+      && narrationVolume > 0
+      && narrationSegments.some((segment) => !segment.muted && frame >= segment.startFrame && frame < segment.startFrame + segment.durationFrames);
+    const previewDucking = narrationActive ? 0.68 : 1;
+    return bgmBaseVolume * previewDucking * Math.min(fadeIn, fadeOut);
+  };
   return (
     <AbsoluteFill style={{backgroundColor: spec.style.tokens.background}}>
-      {narration?.src && <Audio src={narration.src.startsWith('/') ? staticFile(narration.src.slice(1)) : narration.src} volume={narrationVolume} />}
+      {narration?.src && narrationClipsAreDefault
+        ? <Audio src={narration.src.startsWith('/') ? staticFile(narration.src.slice(1)) : narration.src} volume={narrationVolume}/>
+        : narrationSegments.map((segment) => {
+        const asset = spec.assets.find((item) => item.id === segment.assetId);
+        if (!asset?.src || segment.muted) return null;
+        const source = asset.src.startsWith('/') ? staticFile(asset.src.slice(1)) : asset.src;
+        return <Sequence key={segment.assetId} from={segment.startFrame} durationInFrames={segment.durationFrames} name={`Narration · ${segment.sceneId}`}><Audio src={source} playbackRate={segment.playbackRate} volume={narrationVolume * 10 ** (segment.gainDb / 20)}/></Sequence>;
+      })}
+      {bgm?.src && <Audio src={bgm.src.startsWith('/') ? staticFile(bgm.src.slice(1)) : bgm.src} volume={bgmVolume} />}
       {compiled.scenes.map((scene) => {
         const Component = components[scene.component];
         return (

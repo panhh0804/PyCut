@@ -22,6 +22,7 @@ import {
   Send,
   Sparkles,
   Volume2,
+  VolumeX,
   Unlock,
   WandSparkles,
   Workflow,
@@ -117,6 +118,7 @@ export function Studio({projectId, sessions, initialMessages, initialAgentRuns, 
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages.length ? initialMessages : [starterMessage(initialSpec)]);
   const [prompt, setPrompt] = useState('');
   const [selectedSceneId, setSelectedSceneId] = useState(initialSpec.editSpec.scenes[0]?.id ?? '');
+  const [selectedAudioClipId, setSelectedAudioClipId] = useState<string | null>(null);
   const [busy, setBusy] = useState<'save' | 'render' | 'undo' | 'audio' | null>(null);
   const [renderBackend, setRenderBackend] = useState<'auto' | 'remotion' | 'hyperframes'>('auto');
   const [renderResult, setRenderResult] = useState<RenderResult | null>(null);
@@ -128,6 +130,7 @@ export function Studio({projectId, sessions, initialMessages, initialAgentRuns, 
   const [ttsModel, setTtsModel] = useState(initialSpec.editSpec.globalAudio.tts.model);
   const [ttsSpeed, setTtsSpeed] = useState(initialSpec.editSpec.globalAudio.tts.speed);
   const [inspectorTab, setInspectorTab] = useState<'scene' | 'style' | 'motion'>('scene');
+  const [monitorMode, setMonitorMode] = useState<'program' | 'preview'>('program');
   const [playheadFrame, setPlayheadFrame] = useState(initialPreviewFrame);
   const [seekFrame, setSeekFrame] = useState(initialPreviewFrame);
   const [playing, setPlaying] = useState(false);
@@ -148,6 +151,10 @@ export function Studio({projectId, sessions, initialMessages, initialAgentRuns, 
   const storyScene = spec.storySpec.scenes.find((scene) => scene.id === selectedSceneId);
   const durationFrames = useMemo(() => spec.editSpec.scenes.reduce((max, scene) => Math.max(max, scene.startFrame + scene.durationFrames), 1), [spec]);
   const narrationAsset = useMemo(() => spec.assets.find((asset) => asset.id === spec.editSpec.globalAudio.narrationAssetId), [spec]);
+  const bgmAsset = useMemo(() => spec.assets.find((asset) => asset.id === spec.editSpec.globalAudio.bgmAssetId), [spec]);
+  const selectedAudioSegmentIndex = spec.editSpec.globalAudio.narrationSegments.findIndex((segment) => segment.assetId === selectedAudioClipId);
+  const selectedAudioSegment = selectedAudioSegmentIndex >= 0 ? spec.editSpec.globalAudio.narrationSegments[selectedAudioSegmentIndex] : null;
+  const selectedBgmClip = Boolean(bgmAsset && selectedAudioClipId === bgmAsset.id);
   const selectedRun = useMemo(() => agentRuns.find((run) => run.id === selectedRunId) ?? agentRuns.at(-1), [agentRuns, selectedRunId]);
 
   const updateFromResponse = useCallback((data: {spec: VideoSpec; validation: ValidationReport}) => {
@@ -156,6 +163,7 @@ export function Studio({projectId, sessions, initialMessages, initialAgentRuns, 
     setSelectedSceneId((current) => data.spec.editSpec.scenes.some((scene) => scene.id === current)
       ? current
       : data.spec.editSpec.scenes[0]?.id ?? '');
+    setSelectedAudioClipId((current) => current && (data.spec.editSpec.globalAudio.narrationSegments.some((segment) => segment.assetId === current) || data.spec.editSpec.globalAudio.bgmAssetId === current) ? current : null);
   }, []);
 
   const applyJobSnapshot = useCallback((snapshot: AgentJobSnapshot) => {
@@ -261,11 +269,24 @@ export function Studio({projectId, sessions, initialMessages, initialAgentRuns, 
 
   const selectScene = useCallback((sceneId: string) => {
     setSelectedSceneId(sceneId);
+    setSelectedAudioClipId(null);
   }, []);
+
+  const selectAudioClip = useCallback((clipId: string, startFrame: number) => {
+    setSelectedAudioClipId(clipId);
+    setInspectorTab('scene');
+    seekTo(startFrame);
+  }, [seekTo]);
 
   const togglePlayback = useCallback(() => {
     setTransport((current) => ({id: current.id + 1, action: playing ? 'pause' : 'play'}));
   }, [playing]);
+
+  const activateMonitorMode = useCallback((mode: 'program' | 'preview') => {
+    setMonitorMode(mode);
+    setTransport((current) => ({id: current.id + 1, action: 'pause'}));
+    if (mode === 'preview') seekTo(selectedScene.startFrame);
+  }, [seekTo, selectedScene.startFrame]);
 
   const handlePlaybackChange = useCallback((value: boolean) => setPlaying(value), []);
   const handleFrameChange = useCallback((frame: number) => setPlayheadFrame(frame), []);
@@ -361,7 +382,7 @@ export function Studio({projectId, sessions, initialMessages, initialAgentRuns, 
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? '旁白合成失败');
       updateFromResponse(data);
-      setMessages((current) => [...current, {id: crypto.randomUUID(), role: 'agent', text: `已使用 ${data.audio.config.model} 生成 ${data.audio.segments.length} 段旁白，按镜头时长对齐并混音到主音轨。`, meta: 'SiliconFlow TTS · waveform ready'}]);
+      setMessages((current) => [...current, {id: crypto.randomUUID(), role: 'agent', text: `已使用 ${data.audio.config.model} 以整片单会话生成连续旁白，再按自然停顿切成 ${data.audio.segments.length} 个可编辑 Clip；1.0× 不再包含隐藏倍速。`, meta: 'SiliconFlow TTS · single-session voice · waveform ready'}]);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : '旁白合成失败');
     } finally {
@@ -686,7 +707,7 @@ export function Studio({projectId, sessions, initialMessages, initialAgentRuns, 
             <textarea aria-label="给剪辑 Agent 的指令" value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="例如：把第 3 幕改成蓝色，并延长到 12 秒" rows={3}/>
             <div><span>{agentWorking ? '后台任务运行中 · 工作台仍可操作' : '⌘ ↵ 运行'}</span><button type="submit" disabled={!prompt.trim() || Boolean(busy) || agentWorking} aria-label="发送指令"><Send size={16}/></button></div>
           </form>
-          <div className="suggestions"><button type="button" onClick={() => setPrompt('把第 3 幕的图表改成蓝色，并延长到 12 秒')}>改第 3 幕</button><button type="button" onClick={() => void synthesizeAudio()}>生成旁白</button><button type="button" onClick={() => setPrompt('检查全部质量门并告诉我风险')}>检查质量</button></div>
+          <div className="suggestions"><button type="button" onClick={() => setPrompt('把第 3 幕的图表改成蓝色，并延长到 12 秒')}>改第 3 幕</button><button type="button" onClick={() => void synthesizeAudio()}>生成旁白</button><button type="button" onClick={() => setPrompt('请根据视频主题、旁白和镜头节奏自主创作纯音乐 BGM，并解释配乐选择')}>Agent 配乐</button><button type="button" onClick={() => setPrompt('检查全部质量门并告诉我风险')}>检查质量</button></div>
           <section className={`chat-sessions ${sessionOpen ? 'open' : ''}`} aria-label="持久化项目会话">
             <button className="chat-sessions-toggle" type="button" onClick={() => setSessionOpen((value) => !value)} aria-expanded={sessionOpen} aria-controls="chat-session-drawer">
               <Folders size={15}/><span><strong>Sessions</strong><small>{spec.project.title}</small></span><b>{sessions.length}</b><ChevronDown size={14}/>
@@ -711,15 +732,17 @@ export function Studio({projectId, sessions, initialMessages, initialAgentRuns, 
         </aside>
 
         <section className="canvas-column">
-          <div className="canvas-toolbar panel"><div className="toolbar-tabs"><button className="active" type="button"><MonitorPlay size={15}/> Program</button><button type="button"><MousePointer2 size={15}/> Preview</button></div><div className="canvas-meta"><span>1920 × 1080</span><span>{spec.canvas.fps} fps</span><span>{(durationFrames / spec.canvas.fps).toFixed(1)} s</span></div></div>
-          <div className="canvas-stage panel"><div className="player-wrap"><PreviewErrorBoundary><RemotionPreview spec={spec} focusFrame={seekFrame} transport={transport} onFrameChange={handleFrameChange} onPlaybackChange={handlePlaybackChange}/></PreviewErrorBoundary></div><div className="stage-caption"><div><span className="scene-number">{String(selectedIndex + 1).padStart(2, '0')}</span><div><strong>{storyScene?.purpose}</strong><span>{selectedScene.component} · {selectedScene.durationFrames} frames</span></div></div><button type="button" onClick={() => setPrompt(`修改 ${selectedScene.id}：`)}><WandSparkles size={15}/> Ask Agent</button></div></div>
+          <div className="canvas-toolbar panel"><div className="toolbar-tabs" role="group" aria-label="监看模式"><button className={monitorMode === 'program' ? 'active' : ''} type="button" aria-pressed={monitorMode === 'program'} title="播放完整时间线" onClick={() => activateMonitorMode('program')}><MonitorPlay size={15}/> Program</button><button className={monitorMode === 'preview' ? 'active' : ''} type="button" aria-pressed={monitorMode === 'preview'} title="只循环预览当前选中的镜头" onClick={() => activateMonitorMode('preview')}><MousePointer2 size={15}/> Preview</button></div><div className="canvas-meta"><span>{monitorMode === 'program' ? '完整时间线' : `当前镜头 · ${selectedScene.id}`}</span><span>1920 × 1080</span><span>{spec.canvas.fps} fps</span><span>{(durationFrames / spec.canvas.fps).toFixed(1)} s</span></div></div>
+          <div className="canvas-stage panel"><div className="player-wrap"><PreviewErrorBoundary><RemotionPreview spec={spec} focusFrame={seekFrame} transport={transport} inFrame={monitorMode === 'preview' ? selectedScene.startFrame : null} outFrame={monitorMode === 'preview' ? selectedScene.startFrame + selectedScene.durationFrames - 1 : null} onFrameChange={handleFrameChange} onPlaybackChange={handlePlaybackChange}/></PreviewErrorBoundary></div><div className="stage-caption"><div><span className="scene-number">{String(selectedIndex + 1).padStart(2, '0')}</span><div><strong>{storyScene?.purpose}</strong><span>{selectedScene.component} · {selectedScene.durationFrames} frames{monitorMode === 'preview' ? ' · Clip preview' : ''}</span></div></div><button type="button" onClick={() => setPrompt(`修改 ${selectedScene.id}：`)}><WandSparkles size={15}/> Ask Agent</button></div></div>
           <TimelineEditor
             spec={spec}
             selectedSceneId={selectedSceneId}
+            selectedAudioClipId={selectedAudioClipId}
             playheadFrame={playheadFrame}
             playing={playing}
             disabled={Boolean(busy)}
             onSelect={selectScene}
+            onSelectAudioClip={selectAudioClip}
             onSeek={seekTo}
             onTogglePlayback={togglePlayback}
             onPatch={(intent, patch) => void commitPatch(intent, patch)}
@@ -731,13 +754,14 @@ export function Studio({projectId, sessions, initialMessages, initialAgentRuns, 
         </section>
 
         <aside className="inspector panel">
-          <div className="panel-heading"><div><PanelRight size={17}/><strong>Inspector</strong></div><span>{selectedScene.id}</span></div>
+          <div className="panel-heading"><div><PanelRight size={17}/><strong>Inspector</strong></div><span>{selectedAudioSegment ? selectedAudioSegment.sceneId : selectedBgmClip ? 'A2 · BGM' : selectedScene.id}</span></div>
           <div className="inspector-tabs"><button className={inspectorTab === 'scene' ? 'active' : ''} type="button" onClick={() => setInspectorTab('scene')}>Scene</button><button className={inspectorTab === 'style' ? 'active' : ''} type="button" onClick={() => setInspectorTab('style')}>Style</button><button className={inspectorTab === 'motion' ? 'active' : ''} type="button" onClick={() => setInspectorTab('motion')}>Motion</button></div>
           {inspectorTab === 'scene' && <>
+            {(selectedAudioSegment || selectedBgmClip) && <section className="property-section audio-clip-inspector"><div className="label-row"><label>Selected audio clip</label><span>{selectedAudioSegment ? `A1 · ${selectedAudioSegment.sceneId}` : 'A2 · BGM'}</span></div><div className="audio-clip-status"><span>{selectedAudioSegment ? `${(selectedAudioSegment.durationFrames / spec.canvas.fps).toFixed(2)}s · ${selectedAudioSegment.playbackRate.toFixed(2)}×` : `${(durationFrames / spec.canvas.fps).toFixed(2)}s · loop`}</span><strong>{selectedAudioSegment ? selectedAudioSegment.muted ? 'Muted' : 'Audible' : spec.editSpec.globalAudio.bgmMuted ? 'Muted' : 'Audible'}</strong></div><button className="audio-clip-mute" type="button" onClick={() => void commitPatch(`${selectedAudioSegment ? selectedAudioSegment.sceneId : 'BGM'} ${selectedAudioSegment ? selectedAudioSegment.muted ? '取消静音' : '静音' : spec.editSpec.globalAudio.bgmMuted ? '取消静音' : '静音'}`, [{op: 'replace', path: selectedAudioSegment ? `/editSpec/globalAudio/narrationSegments/${selectedAudioSegmentIndex}/muted` : '/editSpec/globalAudio/bgmMuted', value: selectedAudioSegment ? !selectedAudioSegment.muted : !spec.editSpec.globalAudio.bgmMuted}])}>{selectedAudioSegment ? selectedAudioSegment.muted ? <Volume2 size={15}/> : <VolumeX size={15}/> : spec.editSpec.globalAudio.bgmMuted ? <Volume2 size={15}/> : <VolumeX size={15}/>} {selectedAudioSegment ? selectedAudioSegment.muted ? '取消这个 Clip 的静音' : '仅静音这个 Clip' : spec.editSpec.globalAudio.bgmMuted ? '取消 BGM Clip 静音' : '仅静音 BGM Clip'}</button><button className="audio-clip-back" type="button" onClick={() => setSelectedAudioClipId(null)}>返回镜头属性</button></section>}
             <section className="property-section"><label>Component</label><div className="readonly-field"><span className="component-icon"><WandSparkles size={15}/></span><strong>{selectedScene.component}</strong><Lock size={13}/></div></section>
             <DurationControl key={`${selectedScene.id}-${spec.revision}`} sceneId={selectedScene.id} seconds={selectedScene.durationFrames / spec.canvas.fps} onCommit={updateDuration}/>
             <section className="property-section"><label>Narration</label><textarea aria-label={`${selectedScene.id} 旁白`} rows={5} value={storyScene?.narration ?? ''} onChange={(event) => {const value = event.target.value; setSpec((current) => ({...current, storySpec: {...current.storySpec, scenes: current.storySpec.scenes.map((scene) => scene.id === selectedSceneId ? {...scene, narration: value} : scene)}}));}} onBlur={(event) => void commitPatch(`修改 ${selectedScene.id} 旁白`, [{op: 'replace', path: `/storySpec/scenes/${selectedIndex}/narration`, value: event.target.value}])}/></section>
-            <section className="property-section audio-studio"><div className="label-row"><label>AI Voice</label><Volume2 size={14}/></div><select aria-label="旁白模型" value={ttsModel} onChange={(event) => setTtsModel(event.target.value)}><option value="fnlp/MOSS-TTSD-v0.5">MOSS-TTSD · 高表现力 / 长文本</option><option value="FunAudioLLM/CosyVoice2-0.5B">CosyVoice 2 · 快速 / 多音色</option></select><select aria-label="旁白音色" value={ttsVoice} onChange={(event) => setTtsVoice(event.target.value)}><option value="FunAudioLLM/CosyVoice2-0.5B:claire">Claire · 清晰女声</option><option value="FunAudioLLM/CosyVoice2-0.5B:anna">Anna · 温和女声</option><option value="FunAudioLLM/CosyVoice2-0.5B:charles">Charles · 叙事男声</option><option value="FunAudioLLM/CosyVoice2-0.5B:benjamin">Benjamin · 稳重男声</option></select><div className="voice-speed"><span>语速 {ttsSpeed.toFixed(2)}×</span><input aria-label="旁白语速" type="range" min="0.7" max="1.5" step="0.02" value={ttsSpeed} onChange={(event) => setTtsSpeed(Number(event.target.value))}/></div><button className="synthesize-button" type="button" disabled={Boolean(busy)} onClick={() => void synthesizeAudio()}>{busy === 'audio' ? <LoaderCircle className="spin" size={14}/> : <Volume2 size={14}/>} {narrationAsset ? '重新合成全部旁白' : '合成全部旁白'}</button>{narrationAsset && <audio controls preload="metadata" src={narrationAsset.src}/>}<small>{ttsModel === 'fnlp/MOSS-TTSD-v0.5' ? '高表现力模型使用所选参考音色，更适合中文科普和较长旁白。' : '快速模型支持更多预置音色；合成后仍会做自然留白与短淡出。'}</small></section>
+            <section className="property-section audio-studio"><div className="label-row"><label>AI Voice & Music</label><Volume2 size={14}/></div><select aria-label="旁白模型" value={ttsModel} onChange={(event) => setTtsModel(event.target.value)}><option value="fnlp/MOSS-TTSD-v0.5">MOSS-TTSD · 高表现力 / 长文本</option><option value="FunAudioLLM/CosyVoice2-0.5B">CosyVoice 2 · 快速 / 多音色</option></select><select aria-label="旁白音色" value={ttsVoice} onChange={(event) => setTtsVoice(event.target.value)}><option value="FunAudioLLM/CosyVoice2-0.5B:claire">Claire · 清晰女声</option><option value="FunAudioLLM/CosyVoice2-0.5B:anna">Anna · 温和女声</option><option value="FunAudioLLM/CosyVoice2-0.5B:charles">Charles · 叙事男声</option><option value="FunAudioLLM/CosyVoice2-0.5B:benjamin">Benjamin · 稳重男声</option></select><div className="voice-speed"><span>语速 {ttsSpeed.toFixed(2)}×</span><input aria-label="旁白语速" type="range" min="0.7" max="1.5" step="0.02" value={ttsSpeed} onChange={(event) => setTtsSpeed(Number(event.target.value))}/></div><button className="synthesize-button" type="button" disabled={Boolean(busy)} onClick={() => void synthesizeAudio()}>{busy === 'audio' ? <LoaderCircle className="spin" size={14}/> : <Volume2 size={14}/>} {narrationAsset ? '重新合成全部旁白' : '合成全部旁白'}</button>{narrationAsset && <div className="audio-clock-status"><Volume2 size={14}/><span>旁白已绑定 · {((narrationAsset.durationMs ?? 0) / 1000).toFixed(1)}s</span><small>跟随 Program 唯一主时钟播放</small></div>}<button className="synthesize-button" type="button" disabled={Boolean(busy) || agentWorking} onClick={() => setPrompt('请分析当前视频的主题、旁白密度和镜头节奏，自主创作纯音乐 BGM，写入 A2 轨并保持人声清晰')}><Sparkles size={14}/>{bgmAsset ? '让 Agent 重新配乐' : '让 Agent 自主配乐'}</button>{bgmAsset && <div className="audio-clock-status music"><Sparkles size={14}/><span>BGM 已绑定 · {((bgmAsset.durationMs ?? durationFrames / spec.canvas.fps * 1000) / 1000).toFixed(1)}s</span><small>随 Program 播放 · 人声期间自动 ducking</small></div>}<small>{bgmAsset ? `${bgmAsset.attribution ?? 'Agent 原创纯音乐'} · ${spec.editSpec.globalAudio.bgmGainDb} dB · 导出时自动 ducking` : ttsModel === 'fnlp/MOSS-TTSD-v0.5' ? '高表现力旁白；Agent 可按叙事自动创作纯音乐并在 A2 轨混音。' : '快速旁白；配乐会按整片时长生成并自动淡入淡出。'}</small></section>
             <section className="property-section"><div className="label-row"><label>Ownership</label>{selectedScene.locks.locked ? <Lock size={14}/> : <Unlock size={14}/>}</div><button className="ownership-button" type="button" onClick={() => void commitPatch(`${selectedScene.locks.locked ? '解锁' : '锁定'} ${selectedScene.id}`, [{op: 'replace', path: `/editSpec/scenes/${selectedIndex}/locks/locked`, value: !selectedScene.locks.locked}])}><span>{selectedScene.locks.owner === 'human' ? 'Human' : 'Human + Agent'}</span><strong>{selectedScene.locks.locked ? 'Locked' : 'Shared'}</strong></button></section>
           </>}
           {inspectorTab === 'style' && <>

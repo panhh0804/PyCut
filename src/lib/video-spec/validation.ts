@@ -1,5 +1,5 @@
 import {createHash} from 'node:crypto';
-import {COMPONENT_TYPES, componentPropsSchemas, videoSpecSchema, type VideoSpec} from './schema';
+import {COMPONENT_TYPES, componentPropsSchemas, videoSpecSchema, type SceneCanvasProps, type VideoSpec} from './schema';
 
 export type GateId = 'G1' | 'G2' | 'G3' | 'G4' | 'G5' | 'G6' | 'G7';
 export type GateStatus = 'pass' | 'warn' | 'fail';
@@ -25,6 +25,51 @@ const gate = (id: GateId, name: string, details: string[], warnings: string[] = 
   summary: details.length ? `${details.length} 项阻断问题` : warnings.length ? `${warnings.length} 项提醒` : '通过',
   details: details.length ? details : warnings,
 });
+
+const textLayerTypes = new Set(['text', 'badge', 'metric', 'formula', 'code']);
+const decorativeLayerTypes = new Set(['shape', 'line', 'particles']);
+const semanticVisualTypes = new Set(['image', 'video', 'chart', 'metric', 'formula', 'code']);
+
+function overlapRatio(left: SceneCanvasProps['layers'][number], right: SceneCanvasProps['layers'][number]) {
+  const width = Math.max(0, Math.min(left.x + left.width, right.x + right.width) - Math.max(left.x, right.x));
+  const height = Math.max(0, Math.min(left.y + left.height, right.y + right.height) - Math.max(left.y, right.y));
+  const smaller = Math.min(left.width * left.height, right.width * right.height);
+  return smaller > 0 ? width * height / smaller : 0;
+}
+
+function canvasCompositionWarnings(spec: VideoSpec) {
+  const warnings: string[] = [];
+  const shallowScenes: string[] = [];
+  spec.editSpec.scenes.filter((scene) => scene.component === 'SceneCanvas').forEach((scene) => {
+    const canvas = scene.props as unknown as SceneCanvasProps;
+    const layers = canvas.layers ?? [];
+    const textLayers = layers.filter((layer) => textLayerTypes.has(layer.type));
+    const contentLayers = layers.filter((layer) => !decorativeLayerTypes.has(layer.type));
+    const decorativeLayers = layers.filter((layer) => decorativeLayerTypes.has(layer.type));
+    if (decorativeLayers.length > contentLayers.length) {
+      warnings.push(`${scene.id}：装饰图层 ${decorativeLayers.length} 个，多于内容图层 ${contentLayers.length} 个；形状应服务于信息关系而不是填满画面`);
+    }
+    const missingTypeScale = textLayers.filter((layer) => layer.style.fontSize === undefined).map((layer) => layer.id);
+    if (missingTypeScale.length) warnings.push(`${scene.id}：文字图层 ${missingTypeScale.join('、')} 未明确视频字号，双引擎可能出现层级差异`);
+    const sizes = textLayers.map((layer) => layer.style.fontSize).filter((size): size is number => size !== undefined);
+    if (sizes.length >= 2 && Math.max(...sizes) / Math.max(1, Math.min(...sizes)) < 1.35) {
+      warnings.push(`${scene.id}：主次文字字号过于接近，缺少清晰的视觉层级`);
+    }
+    if (sizes.length && Math.max(...sizes) < 64) warnings.push(`${scene.id}：最大文字仅 ${Math.max(...sizes)}px，主信息在 1920×1080 视频中偏弱`);
+    const unsafe = textLayers.filter((layer) => layer.x < 4 || layer.y < 4 || layer.x + layer.width > 96 || layer.y + layer.height > 96).map((layer) => layer.id);
+    if (unsafe.length) warnings.push(`${scene.id}：文字图层 ${unsafe.join('、')} 进入 4% 安全边界，移动端裁切风险较高`);
+    for (let left = 0; left < textLayers.length; left += 1) {
+      for (let right = left + 1; right < textLayers.length; right += 1) {
+        if (overlapRatio(textLayers[left], textLayers[right]) > 0.12) {
+          warnings.push(`${scene.id}：文字图层 ${textLayers[left].id} 与 ${textLayers[right].id} 明显重叠，需重新建立对齐与留白`);
+        }
+      }
+    }
+    if (!layers.some((layer) => semanticVisualTypes.has(layer.type))) shallowScenes.push(scene.id);
+  });
+  if (shallowScenes.length > 1) warnings.push(`${shallowScenes.join('、')}：连续自由画布只有文字与装饰图形；建议按内容加入实拍、数据、公式、代码或关系图解`);
+  return [...new Set(warnings)];
+}
 
 export function validateVideoSpec(input: VideoSpec): ValidationReport {
   const parsed = videoSpecSchema.safeParse(input);
@@ -81,7 +126,7 @@ export function validateVideoSpec(input: VideoSpec): ValidationReport {
     gate('G2', '语义与引用完整性', semanticErrors),
     gate('G3', '时间轴与边界', timelineErrors, timelineWarnings),
     gate('G4', '资产可用性', assetErrors),
-    gate('G5', '组件与构建契约', componentErrors),
+    gate('G5', '组件、构建与画面构图', componentErrors, canvasCompositionWarnings(spec)),
     gate('G6', '视听同步', [], audiovisualWarnings),
     gate('G7', '交付完整性', deliveryErrors),
   ] satisfies GateResult[];

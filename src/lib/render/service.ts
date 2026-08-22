@@ -8,7 +8,7 @@ import {compileVideoSpec, toSrt} from '@/lib/video-spec/compiler';
 import {validateVideoSpec} from '@/lib/video-spec/validation';
 import {renderHyperFrames} from './hyperframes-adapter';
 import {renderRemotion} from './remotion-adapter';
-import {muxNarration} from '@/lib/audio/service';
+import {muxProjectAudio, type ProjectAudioMixInput} from '@/lib/audio/service';
 
 export type RenderBackend = 'remotion' | 'hyperframes';
 export type RenderBackendRequest = RenderBackend | 'auto';
@@ -37,12 +37,42 @@ async function renderWithBackend(
     await renderRemotion(spec, videoPath, mode === 'preview' ? 150 : undefined);
     return;
   }
+  const hasAudioSolo = spec.editSpec.tracks.some((track) => track.kind === 'audio' && track.solo);
+  const narrationTrack = spec.editSpec.tracks.find((track) => track.id === 'audio-narration');
+  const musicTrack = spec.editSpec.tracks.find((track) => track.id === 'audio-music');
   const narration = spec.assets.find((asset) => asset.id === spec.editSpec.globalAudio.narrationAssetId);
-  if (narration?.src) {
+  const bgm = spec.assets.find((asset) => asset.id === spec.editSpec.globalAudio.bgmAssetId);
+  const resolveAudio = (src: string) => src.startsWith('/') ? path.join(process.cwd(), 'public', src.replace(/^\//, '')) : src;
+  const audioInputs: ProjectAudioMixInput[] = [];
+  if (narrationTrack && !narrationTrack.muted && (!hasAudioSolo || narrationTrack.solo)) {
+    const clipsAreDefault = spec.editSpec.globalAudio.narrationSegments.every((segment) => !segment.muted && segment.gainDb === 0 && segment.playbackRate === 1);
+    if (narration?.src && clipsAreDefault) {
+      audioInputs.push({file: resolveAudio(narration.src), role: 'narration', gainDb: narrationTrack.gainDb});
+    } else if (spec.editSpec.globalAudio.narrationSegments.length) {
+      for (const segment of spec.editSpec.globalAudio.narrationSegments) {
+        const asset = spec.assets.find((item) => item.id === segment.assetId);
+        if (!asset?.src || segment.muted) continue;
+        audioInputs.push({
+          file: resolveAudio(asset.src),
+          role: 'narration',
+          gainDb: narrationTrack.gainDb + segment.gainDb,
+          startSeconds: segment.startFrame / spec.canvas.fps,
+          durationSeconds: segment.durationFrames / spec.canvas.fps,
+          playbackRate: segment.playbackRate,
+        });
+      }
+    } else if (narration?.src) {
+      audioInputs.push({file: resolveAudio(narration.src), role: 'narration', gainDb: narrationTrack.gainDb});
+    }
+  }
+  if (bgm?.src && musicTrack && !musicTrack.muted && !spec.editSpec.globalAudio.bgmMuted && (!hasAudioSolo || musicTrack.solo)) {
+    audioInputs.push({file: resolveAudio(bgm.src), role: 'bgm', gainDb: musicTrack.gainDb + spec.editSpec.globalAudio.bgmGainDb, loop: true});
+  }
+  if (audioInputs.length) {
     const visualPath = path.join(workDir, 'hyperframes-visual.mp4');
     await renderHyperFrames(spec, path.join(workDir, 'hyperframes'), visualPath);
-    const narrationPath = path.join(process.cwd(), 'public', narration.src.replace(/^\//, ''));
-    await muxNarration(visualPath, narrationPath, videoPath);
+    const durationFrames = spec.editSpec.scenes.reduce((max, scene) => Math.max(max, scene.startFrame + scene.durationFrames), 1);
+    await muxProjectAudio(visualPath, audioInputs, videoPath, durationFrames / spec.canvas.fps, mode === 'final' ? '320k' : '192k');
     return;
   }
   await renderHyperFrames(spec, path.join(workDir, 'hyperframes'), videoPath);

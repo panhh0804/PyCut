@@ -25,6 +25,7 @@ describe('native Pi AgentSession video tool contract', () => {
       'validate_spec',
       'search_media',
       'synthesize_narration',
+      'compose_bgm',
       'render_preview',
       'render_final',
     ]);

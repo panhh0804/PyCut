@@ -14,6 +14,9 @@ describe('timeline ripple reorder', () => {
       durationFrames: scene.durationFrames,
       sourceDurationMs: scene.durationFrames / spec.canvas.fps * 1000,
       renderedDurationMs: scene.durationFrames / spec.canvas.fps * 1000,
+      muted: false,
+      gainDb: 0,
+      playbackRate: 1,
       waveform: Array.from({length: 16}, () => 0.5),
     }));
     const second = spec.editSpec.scenes[1];

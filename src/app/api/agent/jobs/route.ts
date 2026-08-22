@@ -1,6 +1,7 @@
 import {NextResponse} from 'next/server';
 import {z} from 'zod';
 import {createAgentJob, listAgentJobs} from '@/lib/agent/jobs';
+import {composeGenrePrompt} from '@/lib/agent/genres';
 import {editIntentContextSchema} from '@/lib/agent/types';
 
 export const runtime = 'nodejs';
@@ -10,6 +11,7 @@ const createSchema = z.object({
   projectId: z.string().regex(/^[a-zA-Z0-9-_]+$/),
   prompt: z.string().trim().min(1).max(4_000),
   kind: z.enum(['edit', 'create']).default('edit'),
+  genre: z.enum(['finance', 'education', 'promotional', 'general']).optional(),
   context: editIntentContextSchema.optional(),
 });
 
@@ -33,7 +35,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const input = createSchema.parse(await request.json());
-    const job = await createAgentJob(input);
+    const job = await createAgentJob({...input, prompt: composeGenrePrompt(input.prompt, input.genre)});
     return NextResponse.json({job, eventsUrl: `/api/agent/jobs/${encodeURIComponent(job.id)}/events`}, {
       status: 202,
       headers: {'Cache-Control': 'no-store'},

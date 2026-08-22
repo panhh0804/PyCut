@@ -1,3 +1,4 @@
+import {Video} from '@remotion/media';
 import {Img, interpolate, spring, staticFile, useCurrentFrame, useVideoConfig} from 'remotion';
 import {asNumber, asString, type SceneComponentProps} from './SceneShell';
 
@@ -13,7 +14,9 @@ export function MediaBroll(input: SceneComponentProps) {
   const focalX = asNumber(input.props.focalX, 50);
   const focalY = asNumber(input.props.focalY, 50);
   return <div style={{position: 'absolute', inset: 0, overflow: 'hidden', background: input.spec.style.tokens.background, fontFamily: input.spec.style.tokens.fontFamily, color: input.spec.style.tokens.text}}>
-    {source && <Img src={source} style={{position: 'absolute', inset: '-5%', width: '110%', height: '110%', objectFit: 'cover', objectPosition: `${focalX}% ${focalY}%`, transform: `scale(${1.02 + progress * 0.09}) translate(${(progress - .5) * -2.4}%, ${(progress - .5) * -1.2}%)`, filter: 'saturate(1.08) contrast(1.04)'}}/>}
+    {source && (asset?.kind === 'video'
+      ? <Video src={source} trimBefore={Math.round(asNumber(input.props.sourceStartFrame, 0))} playbackRate={asNumber(input.props.playbackRate, 1)} loop={Boolean(input.props.loop)} volume={0} style={{position: 'absolute', inset: '-5%', width: '110%', height: '110%', objectFit: 'cover', objectPosition: `${focalX}% ${focalY}%`, scale: 1.02 + progress * 0.09, translate: `${(progress - .5) * -2.4}% ${(progress - .5) * -1.2}%`, filter: 'saturate(1.08) contrast(1.04)'}}/>
+      : <Img src={source} style={{position: 'absolute', inset: '-5%', width: '110%', height: '110%', objectFit: 'cover', objectPosition: `${focalX}% ${focalY}%`, scale: 1.02 + progress * 0.09, translate: `${(progress - .5) * -2.4}% ${(progress - .5) * -1.2}%`, filter: 'saturate(1.08) contrast(1.04)'}}/>)}
     <div style={{position: 'absolute', inset: 0, background: 'linear-gradient(90deg, rgba(3,13,22,.9) 0%, rgba(3,13,22,.62) 42%, rgba(3,13,22,.08) 78%), linear-gradient(0deg, rgba(3,13,22,.82), transparent 48%)'}}/>
     <div style={{position: 'absolute', inset: 0, opacity: .24, backgroundImage: 'linear-gradient(rgba(255,255,255,.1) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.1) 1px,transparent 1px)', backgroundSize: '120px 120px', transform: `translate(${progress * -40}px,${progress * 24}px)`}}/>
     {Array.from({length: 14}, (_, index) => <i key={index} style={{position: 'absolute', width: 5 + index % 4 * 3, height: 5 + index % 4 * 3, borderRadius: '50%', left: `${54 + (index * 17) % 43}%`, top: `${10 + (index * 29) % 78}%`, background: index % 3 ? 'rgba(255,255,255,.66)' : accent, boxShadow: `0 0 18px ${accent}`, opacity: .24 + (index % 5) * .08, transform: `translate(${Math.sin(frame / 19 + index) * 18}px,${-progress * (36 + index * 3)}px)`}}/>)}

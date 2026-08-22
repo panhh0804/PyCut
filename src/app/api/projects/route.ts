@@ -1,6 +1,7 @@
 import {NextResponse} from 'next/server';
 import {z} from 'zod';
 import {createAgentJob} from '@/lib/agent/jobs';
+import {composeGenrePrompt} from '@/lib/agent/genres';
 import {archiveProject, listProjects, projectExists, replaceProject} from '@/lib/project/store';
 import {createPendingVideoSpec} from '@/lib/video-spec/defaults';
 
@@ -8,6 +9,7 @@ export const runtime = 'nodejs';
 
 const inputSchema = z.object({
   brief: z.string().min(6).max(4000),
+  genre: z.enum(['finance', 'education', 'promotional', 'general']).optional(),
   projectId: z.string().regex(/^[a-zA-Z0-9-_]+$/).optional(),
   targetDurationMs: z.number().int().min(100).max(180_000).optional(),
 });
@@ -47,7 +49,7 @@ export async function POST(request: Request) {
     const record = await replaceProject(projectId, createPendingVideoSpec(projectId, input.brief, targetDurationMs));
     const job = await createAgentJob({
       projectId,
-      prompt: input.brief,
+      prompt: composeGenrePrompt(input.brief, input.genre),
       kind: 'create',
       context: {revision: record.spec.revision, selectedSceneId: 'generation-canvas', playheadFrame: 0, inspectorTab: 'scene'},
     });

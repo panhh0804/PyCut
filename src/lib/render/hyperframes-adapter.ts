@@ -23,22 +23,66 @@ function canvasBackground(canvas: SceneCanvasProps) {
   return `linear-gradient(${canvas.background.angle}deg,${canvas.background.colors.join(',')})`;
 }
 
-function canvasLayerMarkup(sceneId: string, layers: SceneCanvasProps['layers'], spec: VideoSpec) {
-  return layers.map((layer) => {
+function localMediaSource(asset: VideoSpec['assets'][number] | undefined) {
+  if (!asset?.src) return asset?.sourceUrl ?? '';
+  return asset.src.startsWith('/') ? `file://${path.join(process.cwd(), 'public', asset.src)}` : asset.src;
+}
+
+function canvasLayerMarkup(sceneId: string, layers: SceneCanvasProps['layers'], spec: VideoSpec, sceneStart: number, sceneDuration: number) {
+  const iconPaths: Record<string, string[]> = {
+    cloud: ['M22 74H78C92 74 96 54 83 48C82 29 58 20 46 35C30 31 19 43 22 56C9 60 10 74 22 74Z'],
+    sun: ['M50 26A24 24 0 1 0 50 74A24 24 0 1 0 50 26', 'M50 5V17M50 83V95M5 50H17M83 50H95M18 18L27 27M73 73L82 82M82 18L73 27M27 73L18 82'],
+    droplet: ['M50 8C50 8 24 40 24 60A26 26 0 0 0 76 60C76 40 50 8 50 8Z'],
+    arrow: ['M12 50H84M61 27L84 50L61 73'],
+    check: ['M18 52L40 73L83 25'], sparkles: ['M50 8L58 39L88 50L58 61L50 92L42 61L12 50L42 39Z'],
+    globe: ['M50 10A40 40 0 1 0 50 90A40 40 0 1 0 50 10M10 50H90M50 10C32 30 32 70 50 90M50 10C68 30 68 70 50 90'],
+    atom: ['M18 50C18 27 32 14 50 32C68 50 82 73 82 50C82 27 68 14 50 32C32 50 18 73 18 50M50 46A4 4 0 1 0 50 54A4 4 0 1 0 50 46'],
+    play: ['M34 22L78 50L34 78Z'],
+  };
+  const memberIds = new Set(layers.flatMap((layer) => layer.type === 'group' || layer.type === 'mask' ? layer.memberIds : []));
+  const mask = (shape: string) => shape === 'circle' ? 'circle(48% at 50% 50%)' : shape === 'diagonal' ? 'polygon(10% 0,100% 0,90% 100%,0 100%)' : shape === 'hexagon' ? 'polygon(25% 2%,75% 2%,98% 50%,75% 98%,25% 98%,2% 50%)' : 'inset(0 round 28px)';
+  const renderLayer = (layer: SceneCanvasProps['layers'][number], ancestors = new Set<string>()): string => {
+    if (ancestors.has(layer.id)) return '';
     const style = layer.style;
     const borderWidth = layer.type === 'line' ? 0 : style.borderWidth ?? 0;
     const shadow = layer.type !== 'line' && style.shadow ? `0 18px ${style.shadow}px rgba(0,0,0,.28)` : 'none';
-    const base = `id="${escapeHtml(sceneId)}-${escapeHtml(layer.id)}" class="free-layer free-${layer.type}" style="left:${layer.x}%;top:${layer.y}%;width:${layer.width}%;height:${layer.height}%;z-index:${layer.zIndex};color:${escapeHtml(style.color ?? 'inherit')};background:${escapeHtml(style.backgroundColor ?? 'transparent')};border:${borderWidth}px solid ${escapeHtml(style.borderColor ?? 'transparent')};border-radius:${style.radius ?? 0}px;padding:${style.padding ?? 0}px;font-size:${style.fontSize ?? 28}px;font-weight:${style.fontWeight ?? 500};line-height:${style.lineHeight ?? 1.2};letter-spacing:${style.letterSpacing ?? 0}px;text-align:${style.align ?? 'left'};opacity:${style.opacity ?? 1};transform:rotate(${style.rotation ?? 0}deg);filter:${style.blur ? `blur(${style.blur}px)` : 'none'};box-shadow:${shadow}"`;
-    if (layer.type === 'image') {
+    const clip = layer.type === 'mask' ? `clip-path:${mask(layer.maskShape)};` : '';
+    const base = `id="${escapeHtml(sceneId)}-${escapeHtml(layer.id)}" class="free-layer free-${layer.type}" style="left:${layer.x}%;top:${layer.y}%;width:${layer.width}%;height:${layer.height}%;z-index:${layer.zIndex};color:${escapeHtml(style.color ?? 'inherit')};background:${escapeHtml(style.backgroundColor ?? 'transparent')};border:${borderWidth}px solid ${escapeHtml(style.borderColor ?? 'transparent')};border-radius:${style.radius ?? 0}px;padding:${style.padding ?? 0}px;font-size:${style.fontSize ?? 28}px;font-weight:${style.fontWeight ?? 500};line-height:${style.lineHeight ?? 1.2};letter-spacing:${style.letterSpacing ?? 0}px;text-align:${style.align ?? 'left'};opacity:${style.opacity ?? 1};transform:rotate(${style.rotation ?? 0}deg);filter:${style.blur ? `blur(${style.blur}px)` : 'none'};box-shadow:${shadow};${clip}"`;
+    if (layer.type === 'group' || layer.type === 'mask') {
+      const next = new Set(ancestors).add(layer.id);
+      return `<div ${base}>${layer.memberIds.map((id) => layers.find((item) => item.id === id)).filter((item): item is SceneCanvasProps['layers'][number] => Boolean(item)).map((item) => renderLayer(item, next)).join('')}</div>`;
+    }
+    if (layer.type === 'image' || layer.type === 'video') {
       const asset = spec.assets.find((item) => item.id === layer.assetId);
-      const source = asset?.sourceUrl ?? (asset?.src.startsWith('/') ? `file://${path.join(process.cwd(), 'public', asset.src)}` : asset?.src ?? '');
+      const source = localMediaSource(asset);
+      if (layer.type === 'video') return `<div ${base}><video id="${escapeHtml(sceneId)}-${escapeHtml(layer.id)}-media" src="${escapeHtml(source)}" data-start="${sceneStart}" data-duration="${sceneDuration}" data-media-start="${layer.sourceStartFrame / spec.canvas.fps}" data-playback-rate="${layer.playbackRate}" data-track-index="80" ${layer.loop ? 'loop' : ''} muted playsinline style="width:100%;height:100%;object-fit:${layer.fit};object-position:${layer.focalX}% ${layer.focalY}%"></video></div>`;
       return `<div ${base}><img src="${escapeHtml(source)}"></div>`;
     }
     if (layer.type === 'chart') {
       const maximum = Math.max(...(layer.values ?? []), 1);
+      const values = layer.values ?? [];
+      const labels = layer.labels ?? [];
+      const points = values.map((value, index) => `${values.length === 1 ? 50 : 8 + index / (values.length - 1) * 84},${88 - value / maximum * 72}`).join(' ');
+      if (layer.chartType === 'line' || layer.chartType === 'area' || layer.chartType === 'scatter') {
+        const area = layer.chartType === 'area' ? `<polygon points="8,88 ${points} 92,88" fill="${escapeHtml(style.color ?? spec.style.tokens.primary)}33"/>` : '';
+        const line = layer.chartType === 'scatter' ? '' : `<polyline points="${points}" fill="none" stroke="${escapeHtml(style.color ?? spec.style.tokens.primary)}" stroke-width="2.4" vector-effect="non-scaling-stroke"/>`;
+        const dots = values.map((value, index) => `<circle cx="${values.length === 1 ? 50 : 8 + index / (values.length - 1) * 84}" cy="${88 - value / maximum * 72}" r="2.8" fill="${escapeHtml(style.color ?? spec.style.tokens.primary)}"/>`).join('');
+        return `<div ${base}><svg viewBox="0 0 100 100" preserveAspectRatio="none">${area}${line}${dots}</svg></div>`;
+      }
+      if (layer.chartType === 'donut') {
+        const total = Math.max(1, values.reduce((sum, value) => sum + Math.max(0, value), 0));
+        let consumed = 0;
+        const arcs = values.map((value, index) => {const portion = Math.max(0, value) / total * 251.2; const arc = `<circle cx="50" cy="50" r="40" fill="none" stroke="${escapeHtml(index % 2 ? style.borderColor ?? '#FFFFFF' : style.color ?? spec.style.tokens.primary)}" stroke-width="13" stroke-dasharray="${portion} ${251.2 - portion}" stroke-dashoffset="${-consumed}" transform="rotate(-90 50 50)"/>`; consumed += portion; return arc;}).join('');
+        return `<div ${base}><svg viewBox="0 0 100 100">${arcs}</svg></div>`;
+      }
       const bars = (layer.values ?? []).map((value, index) => `<i><strong>${value}</strong><b style="height:${value / maximum * 76}%"></b><span>${escapeHtml(layer.labels?.[index])}</span></i>`).join('');
       return `<div ${base}><div class="free-chart">${bars}</div></div>`;
     }
+    if (layer.type === 'svg') return `<div ${base}><svg viewBox="${escapeHtml(layer.viewBox)}" preserveAspectRatio="xMidYMid meet"><path d="${escapeHtml(layer.path)}" fill="${escapeHtml(style.backgroundColor ?? 'none')}" stroke="${escapeHtml(style.color ?? spec.style.tokens.primary)}" stroke-width="${style.borderWidth ?? 2}"/></svg></div>`;
+    if (layer.type === 'icon') return `<div ${base}><svg viewBox="0 0 100 100" fill="none">${(iconPaths[layer.icon ?? 'sparkles'] ?? iconPaths.sparkles).map((pathValue) => `<path d="${pathValue}" stroke="${escapeHtml(style.color ?? spec.style.tokens.primary)}" stroke-width="${style.borderWidth ?? 4}" stroke-linecap="round" stroke-linejoin="round"/>`).join('')}</svg></div>`;
+    if (layer.type === 'gradientMesh') return `<div ${base}><i style="position:absolute;inset:0;background:radial-gradient(circle at 18% 22%,${escapeHtml(style.color ?? spec.style.tokens.primary)}AA,transparent 38%),radial-gradient(circle at 78% 68%,${escapeHtml(style.borderColor ?? spec.style.tokens.accent)}88,transparent 42%),radial-gradient(circle at 52% 38%,${escapeHtml(style.backgroundColor ?? spec.style.tokens.surface)},transparent 58%)"></i></div>`;
+    if (layer.type === 'noise') return `<div ${base}><i style="position:absolute;inset:0;background-image:repeating-radial-gradient(circle,${escapeHtml(style.color ?? '#FFFFFF')} 0 1px,transparent 1px 4px);background-size:7px 7px;opacity:${style.opacity ?? .14}"></i></div>`;
+    if (layer.type === 'subComposition') return `<div ${base}><svg viewBox="0 0 100 100"><ellipse cx="50" cy="50" rx="33" ry="18" fill="none" stroke="${escapeHtml(style.color ?? spec.style.tokens.primary)}" stroke-width="2"/><ellipse cx="50" cy="50" rx="18" ry="33" fill="none" stroke="${escapeHtml(style.borderColor ?? spec.style.tokens.accent)}" stroke-width="2"/><circle cx="78" cy="58" r="4" fill="${escapeHtml(style.color ?? spec.style.tokens.primary)}"/></svg></div>`;
     if (layer.type === 'particles') {
       const count = Math.max(6, Math.min(36, Number.parseInt(layer.content ?? '18', 10) || 18));
       return `<div ${base}>${Array.from({length: count}, (_, index) => `<i style="left:${(index * 37 + 11) % 100}%;top:${(index * 61 + 7) % 100}%;width:${4 + index % 5 * 3}px;height:${4 + index % 5 * 3}px;background:${escapeHtml(style.color ?? spec.style.tokens.primary)}"></i>`).join('')}</div>`;
@@ -46,7 +90,8 @@ function canvasLayerMarkup(sceneId: string, layers: SceneCanvasProps['layers'], 
     if (layer.type === 'line') return `<div ${base}><i class="free-line-stroke" style="height:${Math.max(1, style.borderWidth ?? 2)}px;background:${escapeHtml(style.color ?? spec.style.tokens.primary)};box-shadow:${style.shadow ? `0 0 ${style.shadow}px ${escapeHtml(style.color ?? spec.style.tokens.primary)}` : 'none'}"></i></div>`;
     const tag = layer.type === 'formula' || layer.type === 'code' ? 'code' : 'span';
     return `<div ${base}><${tag}>${escapeHtml(layer.content).replaceAll('\n', '<br>')}</${tag}></div>`;
-  }).join('');
+  };
+  return layers.filter((layer) => !memberIds.has(layer.id)).map((layer) => renderLayer(layer)).join('');
 }
 
 const effectFilter = (scene: ReturnType<typeof compileVideoSpec>['scenes'][number]) => scene.effects
@@ -79,17 +124,20 @@ function sceneMarkup(scene: ReturnType<typeof compileVideoSpec>['scenes'][number
   if (scene.component === 'CaptionKaraoke') {
     return `<section ${base}><div id="${motionId}" class="scene-motion"><div class="kicker">${escapeHtml(text(props, 'kicker'))}</div><h2>${escapeHtml(text(props, 'title'))}</h2><code class="formula">${escapeHtml(text(props, 'formula'))}</code><div class="steps">${strings(props, 'words').map((word, index) => `<span>${String(index + 1).padStart(2, '0')} · ${escapeHtml(word)}</span>`).join('<i></i>')}</div><p class="footer-copy">${escapeHtml(text(props, 'footer'))}</p></div></section>`;
   }
-  if (scene.component === 'MediaBroll') {
+  if (scene.component === 'MediaBroll' || scene.component === 'MediaClip') {
     const asset = spec.assets.find((item) => item.id === text(props, 'assetId'));
-    const source = asset?.sourceUrl ?? (asset?.src.startsWith('/') ? `file://${path.join(process.cwd(), 'public', asset.src)}` : asset?.src ?? '');
-    return `<section ${base}><img class="media-bg" src="${escapeHtml(source)}"><div class="media-shade"></div><div id="${motionId}" class="scene-motion media-copy"><div class="kicker">${escapeHtml(text(props, 'kicker'))}</div><h1>${escapeHtml(text(props, 'headline'))}</h1><p class="lead">${escapeHtml(text(props, 'caption'))}</p><small>${escapeHtml(text(props, 'credit'))}</small></div></section>`;
+    const source = localMediaSource(asset);
+    const media = asset?.kind === 'video'
+      ? `<video id="${scene.id}-media" class="media-bg" src="${escapeHtml(source)}" data-start="${scene.startMs / 1000}" data-duration="${scene.durationMs / 1000}" data-media-start="${Number(props.sourceStartFrame ?? 0) / spec.canvas.fps}" data-playback-rate="${Number(props.playbackRate ?? 1)}" data-track-index="${trackIndex + 20}" ${props.loop ? 'loop' : ''} muted playsinline style="object-fit:${escapeHtml(text(props, 'fit', 'cover'))};object-position:${Number(props.focalX ?? 50)}% ${Number(props.focalY ?? 50)}%"> </video>`
+      : `<img class="media-bg" src="${escapeHtml(source)}" style="object-fit:${escapeHtml(text(props, 'fit', 'cover'))};object-position:${Number(props.focalX ?? 50)}% ${Number(props.focalY ?? 50)}%">`;
+    return `<section ${base}>${media}<div class="media-shade"></div><div id="${motionId}" class="scene-motion media-copy"><div class="kicker">${escapeHtml(text(props, 'kicker'))}</div><h1>${escapeHtml(text(props, 'headline'))}</h1><p class="lead">${escapeHtml(text(props, 'caption'))}</p><small>${escapeHtml(text(props, 'credit'))}</small></div></section>`;
   }
   if (scene.component === 'SceneCanvas') {
     const canvas = props as unknown as SceneCanvasProps;
     const canvasBase = base.replace(/style="([^"]*)"/, (_match, styles: string) => `style="${styles};background:${escapeHtml(canvasBackground(canvas))}"`);
-    const cameraLayers = canvas.layers.filter((layer) => ['shape', 'line', 'image', 'particles'].includes(layer.type));
+    const cameraLayers = canvas.layers.filter((layer) => ['shape', 'line', 'image', 'video', 'particles'].includes(layer.type));
     const contentLayers = canvas.layers.filter((layer) => !cameraLayers.includes(layer));
-    return `<section ${canvasBase}><div id="${motionId}" class="scene-motion free-canvas"><div id="${scene.id}-camera" class="free-camera">${canvasLayerMarkup(scene.id, cameraLayers, spec)}</div><div class="free-content">${canvasLayerMarkup(scene.id, contentLayers, spec)}</div></div></section>`;
+    return `<section ${canvasBase}><div id="${motionId}" class="scene-motion free-canvas"><div id="${scene.id}-camera" class="free-camera">${canvasLayerMarkup(scene.id, cameraLayers, spec, scene.startMs / 1000, scene.durationMs / 1000)}</div><div class="free-content">${canvasLayerMarkup(scene.id, contentLayers, spec, scene.startMs / 1000, scene.durationMs / 1000)}</div></div></section>`;
   }
   return `<section ${base}><div id="${motionId}" class="scene-motion"><div class="kicker">${escapeHtml(text(props, 'kicker'))}</div><div class="scene-head"><h2>${escapeHtml(text(props, 'title'))}</h2><div class="tags">${strings(props, 'tags').map((tag) => `<span>${escapeHtml(tag)}</span>`).join('')}</div></div><div class="split"><article><small>LAYER 01</small><h3>${escapeHtml(text(props, 'leftTitle'))}</h3><p>${escapeHtml(text(props, 'leftBody')).replaceAll('\n', '<br>')}</p></article><article><small>LAYER 02</small><h3>${escapeHtml(text(props, 'rightTitle'))}</h3><p>${escapeHtml(text(props, 'rightBody')).replaceAll('\n', '<br>')}</p></article></div></div></section>`;
 }
