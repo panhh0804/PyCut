@@ -30,6 +30,7 @@ import {
 import type {ChangeSet, PatchOperation, VideoSpec} from '@/lib/video-spec/schema';
 import type {ValidationReport} from '@/lib/video-spec/validation';
 import type {ProjectAgentRun} from '@/lib/project/store';
+import {GENRE_PRESETS, genrePreset, type GenreId} from '@/lib/agent/genres';
 import {VIDEO_THEME_PRESETS, type VideoThemeName} from '@/lib/video-spec/themes';
 import RemotionPreview from './RemotionPreview';
 import {TimelineEditor} from './TimelineEditor';
@@ -137,6 +138,8 @@ export function Studio({projectId, sessions, initialMessages, initialAgentRuns, 
   const [transport, setTransport] = useState<{id: number; action: 'play' | 'pause'}>({id: 0, action: 'pause'});
   const [creationBrief, setCreationBrief] = useState<string | null>(null);
   const [creationPanelOpen, setCreationPanelOpen] = useState(false);
+  const [newSessionGenre, setNewSessionGenre] = useState<GenreId>('general');
+  const [chatGenre, setChatGenre] = useState<GenreId>('general');
   const [agentRuns, setAgentRuns] = useState<ProjectAgentRun[]>(initialAgentRuns);
   const [traceOpen, setTraceOpen] = useState(true);
   const [selectedRunId, setSelectedRunId] = useState(initialAgentRuns.at(-1)?.id ?? '');
@@ -305,6 +308,7 @@ export function Studio({projectId, sessions, initialMessages, initialAgentRuns, 
           projectId,
           prompt: instruction,
           kind: 'edit',
+          ...(chatGenre !== 'general' ? {genre: chatGenre} : {}),
           context: {revision: spec.revision, selectedSceneId, playheadFrame, inspectorTab, selectedField: null},
         }),
       });
@@ -316,7 +320,7 @@ export function Studio({projectId, sessions, initialMessages, initialAgentRuns, 
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Agent 请求失败');
     }
-  }, [agentWorking, busy, inspectorTab, playheadFrame, projectId, prompt, selectedSceneId, spec.revision]);
+  }, [agentWorking, busy, chatGenre, inspectorTab, playheadFrame, projectId, prompt, selectedSceneId, spec.revision]);
 
   const createSession = useCallback(async (event: FormEvent) => {
     event.preventDefault();
@@ -327,16 +331,17 @@ export function Studio({projectId, sessions, initialMessages, initialAgentRuns, 
     setSessionOpen(false);
     setNotice(null);
     try {
-      const response = await fetch('/api/projects', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({brief})});
+      const response = await fetch('/api/projects', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({brief, genre: newSessionGenre})});
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? '新建会话失败');
+      setNewSessionBrief('');
       router.push(data.url);
     } catch (error) {
       setCreationBrief(null);
       setCreationPanelOpen(false);
       setNotice(error instanceof Error ? error.message : '新建会话失败');
     }
-  }, [busy, newSessionBrief, router]);
+  }, [busy, newSessionBrief, newSessionGenre, router]);
 
   const renameSession = useCallback(async (session: SessionSummary) => {
     const title = window.prompt('输入新的会话名称', session.title)?.trim();
@@ -707,7 +712,16 @@ export function Studio({projectId, sessions, initialMessages, initialAgentRuns, 
             <textarea aria-label="给剪辑 Agent 的指令" value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="例如：把第 3 幕改成蓝色，并延长到 12 秒" rows={3}/>
             <div><span>{agentWorking ? '后台任务运行中 · 工作台仍可操作' : '⌘ ↵ 运行'}</span><button type="submit" disabled={!prompt.trim() || Boolean(busy) || agentWorking} aria-label="发送指令"><Send size={16}/></button></div>
           </form>
-          <div className="suggestions"><button type="button" onClick={() => setPrompt('把第 3 幕的图表改成蓝色，并延长到 12 秒')}>改第 3 幕</button><button type="button" onClick={() => void synthesizeAudio()}>生成旁白</button><button type="button" onClick={() => setPrompt('请根据视频主题、旁白和镜头节奏自主创作纯音乐 BGM，并解释配乐选择')}>Agent 配乐</button><button type="button" onClick={() => setPrompt('检查全部质量门并告诉我风险')}>检查质量</button></div>
+          <div className="suggestions">
+            {genrePreset(chatGenre).suggestions.map((item) => <button type="button" key={item.label} onClick={() => setPrompt(item.prompt)}>{item.label}</button>)}
+            <button type="button" onClick={() => void synthesizeAudio()}>生成旁白</button>
+            <button type="button" onClick={() => setPrompt('请根据视频主题、旁白和镜头节奏自主创作纯音乐 BGM，并解释配乐选择')}>Agent 配乐</button>
+            <button type="button" onClick={() => setPrompt('检查全部质量门并告诉我风险')}>检查质量</button>
+          </div>
+          <div className="chat-genre-bar" aria-label="当前对话体裁">
+            <span>体裁</span>
+            {Object.values(GENRE_PRESETS).map((preset) => <button type="button" key={preset.id} className={chatGenre === preset.id ? 'active' : ''} onClick={() => setChatGenre(preset.id)} title={preset.description}>{preset.label}</button>)}
+          </div>
           <section className={`chat-sessions ${sessionOpen ? 'open' : ''}`} aria-label="持久化项目会话">
             <button className="chat-sessions-toggle" type="button" onClick={() => setSessionOpen((value) => !value)} aria-expanded={sessionOpen} aria-controls="chat-session-drawer">
               <Folders size={15}/><span><strong>Sessions</strong><small>{spec.project.title}</small></span><b>{sessions.length}</b><ChevronDown size={14}/>
@@ -725,6 +739,10 @@ export function Studio({projectId, sessions, initialMessages, initialAgentRuns, 
               </div>
               <form className="session-new" onSubmit={createSession}>
                 <label htmlFor="new-session-brief">从空白 brief 新建视频</label>
+                <div className="genre-picker" role="radiogroup" aria-label="选择内容体裁">
+                  {Object.values(GENRE_PRESETS).map((preset) => <button type="button" key={preset.id} className={`genre-chip ${newSessionGenre === preset.id ? 'active' : ''}`} onClick={() => setNewSessionGenre(preset.id)} title={preset.description} aria-pressed={newSessionGenre === preset.id}><strong>{preset.label}</strong><small>{preset.skillName ? preset.skillName.replace('picut-', '') : 'free'}</small></button>)}
+                </div>
+                <small className="genre-hint">{GENRE_PRESETS[newSessionGenre].description}</small>
                 <div><input id="new-session-brief" value={newSessionBrief} onChange={(event) => setNewSessionBrief(event.target.value)} placeholder="例如：12 秒云朵科普视频"/><button type="submit" disabled={newSessionBrief.trim().length < 6 || Boolean(busy)}><Plus size={14}/>创建</button></div>
               </form>
             </div> : null}
