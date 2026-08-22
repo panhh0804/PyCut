@@ -1,0 +1,73 @@
+.approval-card {
+  flex: none;
+  margin: 0 10px 9px;
+  padding: 11px;
+  border: 1px solid rgba(255, 138, 91, 0.32);
+  border-radius: 11px;
+  background:
+    linear-gradient(145deg, rgba(255, 138, 91, 0.1), rgba(15, 32, 48, 0.92)),
+    #0f2030;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.2);
+}
+
+.approval-head,
+.approval-card > div:last-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.approval-head span {
+  color: var(--orange);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+}
+
+.approval-head strong {
+  padding: 3px 6px;
+  border: 1px solid rgba(255, 138, 91, 0.3);
+  border-radius: 999px;
+  color: #ffb394;
+  font-size: 7px;
+  letter-spacing: 0.8px;
+}
+
+.approval-card p {
+  margin: 9px 0 5px;
+  color: #e8d9d3;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.approval-card small {
+  display: block;
+  margin-bottom: 10px;
+  color: #71899a;
+  font-size: 7px;
+  line-height: 1.5;
+}
+
+.approval-card button {
+  flex: 1;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #102232;
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.approval-card button.approve {
+  border-color: rgba(56, 224, 193, 0.25);
+  background: rgba(56, 224, 193, 0.12);
+  color: var(--teal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
