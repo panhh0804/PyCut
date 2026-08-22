@@ -18,8 +18,9 @@
 - 持久化后台 Agent Job：立即返回工作台，通过 SSE 显示实时工具轨迹；浏览器断线或进程中断后，从原生 transcript 与当前 VideoSpec 恢复。
 - 多会话持久化：每个会话保存独立 VideoSpec、聊天、原生 Pi session、Agent runs、ChangeSet、审批状态、素材和输出。
 - Remotion / HyperFrames / 自主路由三种选择；路由得分、依据、实际执行和 fallback 写入轨迹与 `RenderManifest.json`。
-- 五类可渲染组件：`TextHero`、`SplitScreen`、`DynamicChart`、`CaptionKaraoke`、`MediaBroll`。
-- 视频、叠加、字幕、旁白、BGM 多轨时间轴；支持选择、定位、移动、裁切、分割、复制、删除、关键帧、效果、转场和撤销。
+- 六类可渲染组件：自由组版的 `SceneCanvas`，以及 `TextHero`、`SplitScreen`、`DynamicChart`、`CaptionKaraoke`、`MediaBroll` 预制积木。
+- `SceneCanvas` 支持最多 40 个文字、徽标、指标、公式、代码、图形、线条、图表、图像和粒子图层，每层独立坐标、样式、入场时序与镜头运动；Agent 不再被五种卡片模板限制。
+- 视频、叠加、字幕、旁白、BGM 多轨时间轴；支持选择、定位、移动、裁切、分割、复制、删除、关键帧、效果、转场和撤销。镜头跨过相邻 clip 中心时会波纹重排，同步 StorySpec 与旁白分段，不会留下重叠的无效时间轴。
 - Inspector 的 Scene / Style / Motion 直接修改真实消费字段；全局主题同步背景、表面、文字、强调色和全部镜头。
 - 联网素材检索、本地资产化、可信下载域、许可与署名记录；当前支持 NASA、NOAA、Wikimedia 等来源路由。
 - SiliconFlow TTS 作为独立可选服务，不参与 Pi 的规划模型链路。
@@ -166,7 +167,7 @@ PICUT_MODEL_API_KEY_FILE=.picut/secrets/model-api-key
 
 ## 如何生成一个新视频
 
-1. 打开左上角 `Sessions`。
+1. 打开左侧 Director 对话输入框下方的 `Sessions`。会话切换与新建都在对话工作流内，不再占用顶栏弹层。
 2. 在“新建视频会话”里写完整 brief，例如：
 
    ```text
@@ -264,7 +265,15 @@ npx skills add remotion-dev/skills
         "id": "scene-01",
         "startFrame": 0,
         "durationFrames": 120,
-        "component": "MediaBroll",
+        "component": "SceneCanvas",
+        "props": {
+          "background": {"type": "radial", "colors": ["#071522", "#102A3D"]},
+          "camera": {"startScale": 1, "endScale": 1.06, "panX": -2, "panY": 1},
+          "layers": [
+            {"id": "title", "type": "text", "x": 8, "y": 10, "width": 58, "height": 18, "content": "云为什么会出现？"},
+            {"id": "droplets", "type": "particles", "x": -8, "y": 20, "width": 72, "height": 60, "content": "24"}
+          ]
+        },
         "transform": {"x": 0, "y": 0, "scale": 1, "rotation": 0, "opacity": 1}
       }
     ]
@@ -273,11 +282,11 @@ npx skills add remotion-dev/skills
 }
 ```
 
-VideoSpec 是工程真相；Remotion TSX 和 HyperFrames HTML 是可重新生成的编译/渲染产物。
+VideoSpec 是工程真相；Remotion TSX 和 HyperFrames HTML 是可重新生成的编译/渲染产物。`SceneCanvas` 同时编译到 Remotion 帧级动画与 HyperFrames DOM/GSAP 时间线；内容图层留在安全区，图形/粒子允许进入出血区，摄像机运动不会裁掉标题。
 
 ## 双引擎与自主路由
 
-自主路由综合场景组件、素材类型、音频复用、关键帧密度和引擎约束打分，输出：
+自主路由综合场景组件、`SceneCanvas` 图层类型/数量、素材类型、音频复用、关键帧密度和引擎约束打分，输出：
 
 - `selected`：计划选择；
 - `scores` 与 `confidence`；
@@ -389,7 +398,8 @@ src/
 │   ├── research/              # 可追溯素材检索
 │   └── video-spec/            # Schema、Patch、repair、G1–G7
 ├── remotion/                  # 组件与帧级 Composition
-└── app/globals.css            # Studio 视觉系统
+├── app/globals.css            # Studio 基础视觉系统
+└── app/nle.css                # 多轨、Sessions、轨迹与创建态
 ```
 
 ## License

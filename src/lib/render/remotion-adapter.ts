@@ -15,13 +15,19 @@ function getBundle(spec: VideoSpec) {
     .map((asset) => `${asset.src}:${asset.checksum ?? asset.id}`)
     .sort()
     .join('|');
+  const createBundle = () => bundle({
+    entryPoint: path.join(process.cwd(), 'src', 'remotion', 'index.ts'),
+    publicDir: path.join(process.cwd(), 'public'),
+    onProgress: () => undefined,
+  });
+  // In next dev the server process outlives source edits. Reusing a bundle
+  // keyed only by assets would export stale components after HMR showed the
+  // new canvas. Production code is immutable for the process lifetime, so the
+  // cached bundle remains safe and avoids repeated bundling there.
+  if (process.env.NODE_ENV !== 'production') return createBundle();
   if (!bundlePromise || bundleAssetKey !== assetKey) {
     bundleAssetKey = assetKey;
-    bundlePromise = bundle({
-      entryPoint: path.join(process.cwd(), 'src', 'remotion', 'index.ts'),
-      publicDir: path.join(process.cwd(), 'public'),
-      onProgress: () => undefined,
-    });
+    bundlePromise = createBundle();
   }
   return bundlePromise;
 }

@@ -27,7 +27,8 @@ function canvasLayerMarkup(sceneId: string, layers: SceneCanvasProps['layers'], 
   return layers.map((layer) => {
     const style = layer.style;
     const borderWidth = layer.type === 'line' ? 0 : style.borderWidth ?? 0;
-    const base = `id="${escapeHtml(sceneId)}-${escapeHtml(layer.id)}" class="free-layer free-${layer.type}" style="left:${layer.x}%;top:${layer.y}%;width:${layer.width}%;height:${layer.height}%;z-index:${layer.zIndex};color:${escapeHtml(style.color ?? 'inherit')};background:${escapeHtml(style.backgroundColor ?? 'transparent')};border:${borderWidth}px solid ${escapeHtml(style.borderColor ?? 'transparent')};border-radius:${style.radius ?? 0}px;padding:${style.padding ?? 0}px;font-size:${style.fontSize ?? 28}px;font-weight:${style.fontWeight ?? 500};line-height:${style.lineHeight ?? 1.2};letter-spacing:${style.letterSpacing ?? 0}px;text-align:${style.align ?? 'left'};opacity:${style.opacity ?? 1};transform:rotate(${style.rotation ?? 0}deg);filter:${style.blur ? `blur(${style.blur}px)` : 'none'};box-shadow:${style.shadow ? `0 18px ${style.shadow}px rgba(0,0,0,.28)` : 'none'}"`;
+    const shadow = layer.type !== 'line' && style.shadow ? `0 18px ${style.shadow}px rgba(0,0,0,.28)` : 'none';
+    const base = `id="${escapeHtml(sceneId)}-${escapeHtml(layer.id)}" class="free-layer free-${layer.type}" style="left:${layer.x}%;top:${layer.y}%;width:${layer.width}%;height:${layer.height}%;z-index:${layer.zIndex};color:${escapeHtml(style.color ?? 'inherit')};background:${escapeHtml(style.backgroundColor ?? 'transparent')};border:${borderWidth}px solid ${escapeHtml(style.borderColor ?? 'transparent')};border-radius:${style.radius ?? 0}px;padding:${style.padding ?? 0}px;font-size:${style.fontSize ?? 28}px;font-weight:${style.fontWeight ?? 500};line-height:${style.lineHeight ?? 1.2};letter-spacing:${style.letterSpacing ?? 0}px;text-align:${style.align ?? 'left'};opacity:${style.opacity ?? 1};transform:rotate(${style.rotation ?? 0}deg);filter:${style.blur ? `blur(${style.blur}px)` : 'none'};box-shadow:${shadow}"`;
     if (layer.type === 'image') {
       const asset = spec.assets.find((item) => item.id === layer.assetId);
       const source = asset?.sourceUrl ?? (asset?.src.startsWith('/') ? `file://${path.join(process.cwd(), 'public', asset.src)}` : asset?.src ?? '');
@@ -42,7 +43,7 @@ function canvasLayerMarkup(sceneId: string, layers: SceneCanvasProps['layers'], 
       const count = Math.max(6, Math.min(36, Number.parseInt(layer.content ?? '18', 10) || 18));
       return `<div ${base}>${Array.from({length: count}, (_, index) => `<i style="left:${(index * 37 + 11) % 100}%;top:${(index * 61 + 7) % 100}%;width:${4 + index % 5 * 3}px;height:${4 + index % 5 * 3}px;background:${escapeHtml(style.color ?? spec.style.tokens.primary)}"></i>`).join('')}</div>`;
     }
-    if (layer.type === 'line') return `<div ${base}><i class="free-line-stroke" style="height:${Math.max(1, style.borderWidth ?? 2)}px;background:${escapeHtml(style.color ?? spec.style.tokens.primary)}"></i></div>`;
+    if (layer.type === 'line') return `<div ${base}><i class="free-line-stroke" style="height:${Math.max(1, style.borderWidth ?? 2)}px;background:${escapeHtml(style.color ?? spec.style.tokens.primary)};box-shadow:${style.shadow ? `0 0 ${style.shadow}px ${escapeHtml(style.color ?? spec.style.tokens.primary)}` : 'none'}"></i></div>`;
     const tag = layer.type === 'formula' || layer.type === 'code' ? 'code' : 'span';
     return `<div ${base}><${tag}>${escapeHtml(layer.content).replaceAll('\n', '<br>')}</${tag}></div>`;
   }).join('');

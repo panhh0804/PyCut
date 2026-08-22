@@ -77,7 +77,7 @@ function layerFrameStyle(layer: CanvasLayer, frame: number, fps: number): CSSPro
     letterSpacing: style.letterSpacing,
     textAlign: style.align,
     filter: style.blur ? `blur(${style.blur}px)` : undefined,
-    boxShadow: style.shadow ? `0 18px ${style.shadow}px rgba(0,0,0,.28), 0 0 ${style.shadow}px ${style.borderColor ?? style.color ?? 'rgba(255,255,255,.15)'}55` : undefined,
+    boxShadow: layer.type !== 'line' && style.shadow ? `0 18px ${style.shadow}px rgba(0,0,0,.28), 0 0 ${style.shadow}px ${style.borderColor ?? style.color ?? 'rgba(255,255,255,.15)'}55` : undefined,
     overflow: 'hidden',
     display: 'flex',
     flexDirection: 'column',
@@ -116,7 +116,10 @@ function CanvasLayerContent({layer, frame, spec}: {layer: CanvasLayer; frame: nu
       return <i key={index} style={{position: 'absolute', left: `${x}%`, top: `${y}%`, width: size, height: size, borderRadius: '50%', background: layer.style.color ?? spec.style.tokens.primary, opacity: .25 + index % 4 * .16, translate: `${drift}px ${-progress * (12 + index % 7 * 5)}px`, boxShadow: `0 0 ${size * 3}px ${layer.style.color ?? spec.style.tokens.primary}`}}/>;
     })}</div>;
   }
-  if (layer.type === 'line') return <span style={{display: 'block', width: `${progress * 100}%`, height: Math.max(1, layer.style.borderWidth ?? 2), background: layer.style.color ?? spec.style.tokens.primary, transformOrigin: 'left center'}}/>;
+  if (layer.type === 'line') {
+    const color = layer.style.color ?? spec.style.tokens.primary;
+    return <span style={{display: 'block', width: `${progress * 100}%`, height: Math.max(1, layer.style.borderWidth ?? 2), background: color, boxShadow: layer.style.shadow ? `0 0 ${layer.style.shadow}px ${color}` : undefined, transformOrigin: 'left center'}}/>;
+  }
   if (layer.type === 'shape') return layer.content ? <span>{layer.content}</span> : null;
   if (layer.type === 'code') {
     const lines = (layer.content ?? '').split('\n');
