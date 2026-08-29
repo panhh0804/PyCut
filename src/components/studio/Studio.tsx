@@ -1,6 +1,6 @@
 'use client';
 
-import {Component, useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode} from 'react';
+import {Component, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode} from 'react';
 import {useRouter} from 'next/navigation';
 import {
   Archive,
@@ -32,7 +32,7 @@ import type {ValidationReport} from '@/lib/video-spec/validation';
 import type {ProjectAgentRun} from '@/lib/project/store';
 import {GENRE_PRESETS, genrePreset, type GenreId} from '@/lib/agent/genres';
 import {VIDEO_THEME_PRESETS, type VideoThemeName} from '@/lib/video-spec/themes';
-import RemotionPreview from './RemotionPreview';
+import RemotionPreview, {type RemotionPreviewRef} from './RemotionPreview';
 import {TimelineEditor} from './TimelineEditor';
 
 function PreviewRecovery({reason = '画布模块加载失败'}: {reason?: string}) {
@@ -135,7 +135,9 @@ export function Studio({projectId, sessions, initialMessages, initialAgentRuns, 
   const [playheadFrame, setPlayheadFrame] = useState(initialPreviewFrame);
   const [seekFrame, setSeekFrame] = useState(initialPreviewFrame);
   const [playing, setPlaying] = useState(false);
-  const [transport, setTransport] = useState<{id: number; action: 'play' | 'pause'}>({id: 0, action: 'pause'});
+  const previewTransportRef = useRef<RemotionPreviewRef>(null);
+  const latestPlaybackFrameRef = useRef(initialPreviewFrame);
+  const lastPlayheadPaintRef = useRef(0);
   const [creationBrief, setCreationBrief] = useState<string | null>(null);
   const [creationPanelOpen, setCreationPanelOpen] = useState(false);
   const [newSessionGenre, setNewSessionGenre] = useState<GenreId>('general');
@@ -266,6 +268,11 @@ export function Studio({projectId, sessions, initialMessages, initialAgentRuns, 
 
   const seekTo = useCallback((frame: number) => {
     const next = Math.max(0, Math.min(durationFrames - 1, Math.round(frame)));
+    // Imperatively seek even when the requested frame equals the previous seek
+    // state. This matters after playback has moved away from that frame.
+    previewTransportRef.current?.seekTo(next);
+    latestPlaybackFrameRef.current = next;
+    lastPlayheadPaintRef.current = performance.now();
     setSeekFrame(next);
     setPlayheadFrame(next);
   }, [durationFrames]);
@@ -282,17 +289,32 @@ export function Studio({projectId, sessions, initialMessages, initialAgentRuns, 
   }, [seekTo]);
 
   const togglePlayback = useCallback(() => {
-    setTransport((current) => ({id: current.id + 1, action: playing ? 'pause' : 'play'}));
-  }, [playing]);
+    previewTransportRef.current?.togglePlayback();
+  }, []);
 
   const activateMonitorMode = useCallback((mode: 'program' | 'preview') => {
+    previewTransportRef.current?.pause();
     setMonitorMode(mode);
-    setTransport((current) => ({id: current.id + 1, action: 'pause'}));
     if (mode === 'preview') seekTo(selectedScene.startFrame);
   }, [seekTo, selectedScene.startFrame]);
 
-  const handlePlaybackChange = useCallback((value: boolean) => setPlaying(value), []);
-  const handleFrameChange = useCallback((frame: number) => setPlayheadFrame(frame), []);
+  const handlePlaybackChange = useCallback((value: boolean) => {
+    setPlaying(value);
+    if (!value) {
+      lastPlayheadPaintRef.current = 0;
+      setPlayheadFrame(latestPlaybackFrameRef.current);
+    }
+  }, []);
+  const handleFrameChange = useCallback((frame: number) => {
+    latestPlaybackFrameRef.current = frame;
+    const now = performance.now();
+    // Updating the entire three-column studio at 30/60 fps competes with the
+    // browser's audio scheduler. A 20 fps UI clock is visually continuous while
+    // the actual Remotion Player and audio master remain frame-accurate.
+    if (now - lastPlayheadPaintRef.current < 50) return;
+    lastPlayheadPaintRef.current = now;
+    setPlayheadFrame(frame);
+  }, []);
 
   const submitPrompt = useCallback(async (event: FormEvent) => {
     event.preventDefault();
@@ -727,6 +749,14 @@ export function Studio({projectId, sessions, initialMessages, initialAgentRuns, 
               <Folders size={15}/><span><strong>Sessions</strong><small>{spec.project.title}</small></span><b>{sessions.length}</b><ChevronDown size={14}/>
             </button>
             {sessionOpen ? <div className="chat-session-drawer" id="chat-session-drawer">
+              <form className="session-new" onSubmit={createSession}>
+                <label htmlFor="new-session-brief">从空白 brief 新建视频</label>
+                <div className="genre-picker" role="radiogroup" aria-label="选择内容体裁">
+                  {Object.values(GENRE_PRESETS).map((preset) => <button type="button" key={preset.id} className={`genre-chip ${newSessionGenre === preset.id ? 'active' : ''}`} onClick={() => setNewSessionGenre(preset.id)} title={preset.description} aria-pressed={newSessionGenre === preset.id}><strong>{preset.label}</strong><small>{preset.skillName ? preset.skillName.replace('picut-', '') : 'free'}</small></button>)}
+                </div>
+                <small className="genre-hint">{GENRE_PRESETS[newSessionGenre].description}</small>
+                <div className="session-new-submit"><input id="new-session-brief" value={newSessionBrief} onChange={(event) => setNewSessionBrief(event.target.value)} placeholder="例如：12 秒云朵科普视频"/><button type="submit" disabled={newSessionBrief.trim().length < 6 || Boolean(busy)} aria-label="发送需求并创建 Session"><Send size={14}/><span>创建</span></button></div>
+              </form>
               <div className="session-list">
                 {sessions.map((session) => <div className={`session-item ${session.id === projectId ? 'active' : ''}`} key={session.id}>
                   <button type="button" onClick={() => router.push(`/?project=${encodeURIComponent(session.id)}`)} aria-current={session.id === projectId ? 'page' : undefined}>
@@ -737,21 +767,13 @@ export function Studio({projectId, sessions, initialMessages, initialAgentRuns, 
                   <button className="session-action danger" type="button" onClick={() => void archiveSession(session)} aria-label={`归档 ${session.title}`}><Archive size={12}/></button>
                 </div>)}
               </div>
-              <form className="session-new" onSubmit={createSession}>
-                <label htmlFor="new-session-brief">从空白 brief 新建视频</label>
-                <div className="genre-picker" role="radiogroup" aria-label="选择内容体裁">
-                  {Object.values(GENRE_PRESETS).map((preset) => <button type="button" key={preset.id} className={`genre-chip ${newSessionGenre === preset.id ? 'active' : ''}`} onClick={() => setNewSessionGenre(preset.id)} title={preset.description} aria-pressed={newSessionGenre === preset.id}><strong>{preset.label}</strong><small>{preset.skillName ? preset.skillName.replace('picut-', '') : 'free'}</small></button>)}
-                </div>
-                <small className="genre-hint">{GENRE_PRESETS[newSessionGenre].description}</small>
-                <div><input id="new-session-brief" value={newSessionBrief} onChange={(event) => setNewSessionBrief(event.target.value)} placeholder="例如：12 秒云朵科普视频"/><button type="submit" disabled={newSessionBrief.trim().length < 6 || Boolean(busy)}><Plus size={14}/>创建</button></div>
-              </form>
             </div> : null}
           </section>
         </aside>
 
         <section className="canvas-column">
           <div className="canvas-toolbar panel"><div className="toolbar-tabs" role="group" aria-label="监看模式"><button className={monitorMode === 'program' ? 'active' : ''} type="button" aria-pressed={monitorMode === 'program'} title="播放完整时间线" onClick={() => activateMonitorMode('program')}><MonitorPlay size={15}/> Program</button><button className={monitorMode === 'preview' ? 'active' : ''} type="button" aria-pressed={monitorMode === 'preview'} title="只循环预览当前选中的镜头" onClick={() => activateMonitorMode('preview')}><MousePointer2 size={15}/> Preview</button></div><div className="canvas-meta"><span>{monitorMode === 'program' ? '完整时间线' : `当前镜头 · ${selectedScene.id}`}</span><span>1920 × 1080</span><span>{spec.canvas.fps} fps</span><span>{(durationFrames / spec.canvas.fps).toFixed(1)} s</span></div></div>
-          <div className="canvas-stage panel"><div className="player-wrap"><PreviewErrorBoundary><RemotionPreview spec={spec} focusFrame={seekFrame} transport={transport} inFrame={monitorMode === 'preview' ? selectedScene.startFrame : null} outFrame={monitorMode === 'preview' ? selectedScene.startFrame + selectedScene.durationFrames - 1 : null} onFrameChange={handleFrameChange} onPlaybackChange={handlePlaybackChange}/></PreviewErrorBoundary></div><div className="stage-caption"><div><span className="scene-number">{String(selectedIndex + 1).padStart(2, '0')}</span><div><strong>{storyScene?.purpose}</strong><span>{selectedScene.component} · {selectedScene.durationFrames} frames{monitorMode === 'preview' ? ' · Clip preview' : ''}</span></div></div><button type="button" onClick={() => setPrompt(`修改 ${selectedScene.id}：`)}><WandSparkles size={15}/> Ask Agent</button></div></div>
+          <div className="canvas-stage panel"><div className="player-wrap"><PreviewErrorBoundary><RemotionPreview ref={previewTransportRef} spec={spec} focusFrame={seekFrame} inFrame={monitorMode === 'preview' ? selectedScene.startFrame : null} outFrame={monitorMode === 'preview' ? selectedScene.startFrame + selectedScene.durationFrames - 1 : null} loop={monitorMode === 'preview'} onFrameChange={handleFrameChange} onPlaybackChange={handlePlaybackChange}/></PreviewErrorBoundary></div><div className="stage-caption"><div><span className="scene-number">{String(selectedIndex + 1).padStart(2, '0')}</span><div><strong>{storyScene?.purpose}</strong><span>{selectedScene.component} · {selectedScene.durationFrames} frames{monitorMode === 'preview' ? ' · Clip preview' : ''}</span></div></div><button type="button" onClick={() => setPrompt(`修改 ${selectedScene.id}：`)}><WandSparkles size={15}/> Ask Agent</button></div></div>
           <TimelineEditor
             spec={spec}
             selectedSceneId={selectedSceneId}
@@ -779,7 +801,7 @@ export function Studio({projectId, sessions, initialMessages, initialAgentRuns, 
             <section className="property-section"><label>Component</label><div className="readonly-field"><span className="component-icon"><WandSparkles size={15}/></span><strong>{selectedScene.component}</strong><Lock size={13}/></div></section>
             <DurationControl key={`${selectedScene.id}-${spec.revision}`} sceneId={selectedScene.id} seconds={selectedScene.durationFrames / spec.canvas.fps} onCommit={updateDuration}/>
             <section className="property-section"><label>Narration</label><textarea aria-label={`${selectedScene.id} 旁白`} rows={5} value={storyScene?.narration ?? ''} onChange={(event) => {const value = event.target.value; setSpec((current) => ({...current, storySpec: {...current.storySpec, scenes: current.storySpec.scenes.map((scene) => scene.id === selectedSceneId ? {...scene, narration: value} : scene)}}));}} onBlur={(event) => void commitPatch(`修改 ${selectedScene.id} 旁白`, [{op: 'replace', path: `/storySpec/scenes/${selectedIndex}/narration`, value: event.target.value}])}/></section>
-            <section className="property-section audio-studio"><div className="label-row"><label>AI Voice & Music</label><Volume2 size={14}/></div><select aria-label="旁白模型" value={ttsModel} onChange={(event) => setTtsModel(event.target.value)}><option value="fnlp/MOSS-TTSD-v0.5">MOSS-TTSD · 高表现力 / 长文本</option><option value="FunAudioLLM/CosyVoice2-0.5B">CosyVoice 2 · 快速 / 多音色</option></select><select aria-label="旁白音色" value={ttsVoice} onChange={(event) => setTtsVoice(event.target.value)}><option value="FunAudioLLM/CosyVoice2-0.5B:claire">Claire · 清晰女声</option><option value="FunAudioLLM/CosyVoice2-0.5B:anna">Anna · 温和女声</option><option value="FunAudioLLM/CosyVoice2-0.5B:charles">Charles · 叙事男声</option><option value="FunAudioLLM/CosyVoice2-0.5B:benjamin">Benjamin · 稳重男声</option></select><div className="voice-speed"><span>语速 {ttsSpeed.toFixed(2)}×</span><input aria-label="旁白语速" type="range" min="0.7" max="1.5" step="0.02" value={ttsSpeed} onChange={(event) => setTtsSpeed(Number(event.target.value))}/></div><button className="synthesize-button" type="button" disabled={Boolean(busy)} onClick={() => void synthesizeAudio()}>{busy === 'audio' ? <LoaderCircle className="spin" size={14}/> : <Volume2 size={14}/>} {narrationAsset ? '重新合成全部旁白' : '合成全部旁白'}</button>{narrationAsset && <div className="audio-clock-status"><Volume2 size={14}/><span>旁白已绑定 · {((narrationAsset.durationMs ?? 0) / 1000).toFixed(1)}s</span><small>跟随 Program 唯一主时钟播放</small></div>}<button className="synthesize-button" type="button" disabled={Boolean(busy) || agentWorking} onClick={() => setPrompt('请分析当前视频的主题、旁白密度和镜头节奏，自主创作纯音乐 BGM，写入 A2 轨并保持人声清晰')}><Sparkles size={14}/>{bgmAsset ? '让 Agent 重新配乐' : '让 Agent 自主配乐'}</button>{bgmAsset && <div className="audio-clock-status music"><Sparkles size={14}/><span>BGM 已绑定 · {((bgmAsset.durationMs ?? durationFrames / spec.canvas.fps * 1000) / 1000).toFixed(1)}s</span><small>随 Program 播放 · 人声期间自动 ducking</small></div>}<small>{bgmAsset ? `${bgmAsset.attribution ?? 'Agent 原创纯音乐'} · ${spec.editSpec.globalAudio.bgmGainDb} dB · 导出时自动 ducking` : ttsModel === 'fnlp/MOSS-TTSD-v0.5' ? '高表现力旁白；Agent 可按叙事自动创作纯音乐并在 A2 轨混音。' : '快速旁白；配乐会按整片时长生成并自动淡入淡出。'}</small></section>
+            <section className="property-section audio-studio"><div className="label-row"><label>AI Voice & Music</label><Volume2 size={14}/></div><select aria-label="旁白模型" value={ttsModel} onChange={(event) => setTtsModel(event.target.value)}><option value="fnlp/MOSS-TTSD-v0.5">MOSS-TTSD · 高表现力 / 长文本</option><option value="FunAudioLLM/CosyVoice2-0.5B">CosyVoice 2 · 快速 / 多音色</option></select><select aria-label="旁白音色" value={ttsVoice} onChange={(event) => setTtsVoice(event.target.value)}><option value="FunAudioLLM/CosyVoice2-0.5B:claire">Claire · 清晰女声</option><option value="FunAudioLLM/CosyVoice2-0.5B:anna">Anna · 温和女声</option><option value="FunAudioLLM/CosyVoice2-0.5B:charles">Charles · 叙事男声</option><option value="FunAudioLLM/CosyVoice2-0.5B:benjamin">Benjamin · 稳重男声</option></select><div className="voice-speed"><span>语速 {ttsSpeed.toFixed(2)}×</span><input aria-label="旁白语速" type="range" min="0.7" max="1.5" step="0.02" value={ttsSpeed} onChange={(event) => setTtsSpeed(Number(event.target.value))}/></div><button className="synthesize-button" type="button" disabled={Boolean(busy)} onClick={() => void synthesizeAudio()}>{busy === 'audio' ? <LoaderCircle className="spin" size={14}/> : <Volume2 size={14}/>} {narrationAsset ? '重新合成全部旁白' : '合成全部旁白'}</button>{narrationAsset && <div className="audio-clock-status"><Volume2 size={14}/><span>旁白已绑定 · {((narrationAsset.durationMs ?? 0) / 1000).toFixed(1)}s</span><small>跟随 Program 唯一主时钟播放</small></div>}<button className="synthesize-button" type="button" disabled={Boolean(busy) || agentWorking} onClick={() => setPrompt('请分析当前视频的主题、旁白密度和镜头节奏，自主创作纯音乐 BGM，写入 A2 轨并保持人声清晰')}><Sparkles size={14}/>{bgmAsset ? '让 Agent 重新配乐' : '让 Agent 自主配乐'}</button>{bgmAsset && <div className="audio-clock-status music"><Sparkles size={14}/><span>BGM 已绑定 · {((bgmAsset.durationMs ?? durationFrames / spec.canvas.fps * 1000) / 1000).toFixed(1)}s</span><small>随 Program 播放 · 人声期间轻降，不静音</small></div>}<small>{bgmAsset ? `${bgmAsset.attribution ?? 'Agent 原创纯音乐'} · ${spec.editSpec.globalAudio.bgmGainDb} dB · 人声期间保留音乐底` : ttsModel === 'fnlp/MOSS-TTSD-v0.5' ? '高表现力旁白；Agent 可按叙事自动创作纯音乐并在 A2 轨混音。' : '快速旁白；配乐会按整片时长生成并自动淡入淡出。'}</small></section>
             <section className="property-section"><div className="label-row"><label>Ownership</label>{selectedScene.locks.locked ? <Lock size={14}/> : <Unlock size={14}/>}</div><button className="ownership-button" type="button" onClick={() => void commitPatch(`${selectedScene.locks.locked ? '解锁' : '锁定'} ${selectedScene.id}`, [{op: 'replace', path: `/editSpec/scenes/${selectedIndex}/locks/locked`, value: !selectedScene.locks.locked}])}><span>{selectedScene.locks.owner === 'human' ? 'Human' : 'Human + Agent'}</span><strong>{selectedScene.locks.locked ? 'Locked' : 'Shared'}</strong></button></section>
           </>}
           {inspectorTab === 'style' && <>

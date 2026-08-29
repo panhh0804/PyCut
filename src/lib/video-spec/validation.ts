@@ -27,8 +27,8 @@ const gate = (id: GateId, name: string, details: string[], warnings: string[] = 
 });
 
 const textLayerTypes = new Set(['text', 'badge', 'metric', 'formula', 'code']);
-const decorativeLayerTypes = new Set(['shape', 'line', 'particles']);
-const semanticVisualTypes = new Set(['image', 'video', 'chart', 'metric', 'formula', 'code']);
+const decorativeLayerTypes = new Set(['shape', 'line', 'particles', 'gradientMesh', 'noise']);
+const semanticVisualTypes = new Set(['image', 'video', 'chart', 'metric', 'formula', 'code', 'svg', 'icon', 'subComposition']);
 
 function overlapRatio(left: SceneCanvasProps['layers'][number], right: SceneCanvasProps['layers'][number]) {
   const width = Math.max(0, Math.min(left.x + left.width, right.x + right.width) - Math.max(left.x, right.x));
@@ -49,9 +49,9 @@ function canvasCompositionWarnings(spec: VideoSpec) {
     if (decorativeLayers.length > contentLayers.length) {
       warnings.push(`${scene.id}：装饰图层 ${decorativeLayers.length} 个，多于内容图层 ${contentLayers.length} 个；形状应服务于信息关系而不是填满画面`);
     }
-    const missingTypeScale = textLayers.filter((layer) => layer.style.fontSize === undefined).map((layer) => layer.id);
+    const missingTypeScale = textLayers.filter((layer) => layer.style?.fontSize === undefined).map((layer) => layer.id);
     if (missingTypeScale.length) warnings.push(`${scene.id}：文字图层 ${missingTypeScale.join('、')} 未明确视频字号，双引擎可能出现层级差异`);
-    const sizes = textLayers.map((layer) => layer.style.fontSize).filter((size): size is number => size !== undefined);
+    const sizes = textLayers.map((layer) => layer.style?.fontSize).filter((size): size is number => size !== undefined);
     if (sizes.length >= 2 && Math.max(...sizes) / Math.max(1, Math.min(...sizes)) < 1.35) {
       warnings.push(`${scene.id}：主次文字字号过于接近，缺少清晰的视觉层级`);
     }

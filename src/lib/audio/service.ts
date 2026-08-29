@@ -391,7 +391,13 @@ export async function muxProjectAudio(videoInput: string, audioInputs: ProjectAu
   }
   if (narrationLabels.length && bgmLabels.length) {
     filters.push('[narration_bus]asplit=2[narration_mix][narration_side]');
-    filters.push('[bgm_bus][narration_side]sidechaincompress=threshold=0.045:ratio=3.5:attack=12:release=280:makeup=1[ducked_bgm]');
+    // Keep a guaranteed audible music floor. Only the 65% dynamic branch is
+    // side-chain compressed, so narration can never silence the BGM bus.
+    filters.push('[bgm_bus]asplit=2[bgm_floor_in][bgm_dynamic_in]');
+    filters.push('[bgm_floor_in]volume=0.35[bgm_floor]');
+    filters.push('[bgm_dynamic_in]volume=0.65[bgm_dynamic]');
+    filters.push('[bgm_dynamic][narration_side]sidechaincompress=threshold=0.055:ratio=2.4:attack=12:release=280:makeup=1[bgm_dynamic_ducked]');
+    filters.push('[bgm_floor][bgm_dynamic_ducked]amix=inputs=2:duration=longest:normalize=0[ducked_bgm]');
     filters.push('[narration_mix][ducked_bgm]amix=inputs=2:duration=longest:normalize=0,alimiter=limit=0.95[mix]');
   } else if (narrationLabels.length) {
     filters.push('[narration_bus]alimiter=limit=0.95[mix]');

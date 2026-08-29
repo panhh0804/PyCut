@@ -50,7 +50,11 @@ export function VideoComposition({spec}: VideoCompositionProps) {
   const narration = spec.assets.find((asset) => asset.id === spec.editSpec.globalAudio.narrationAssetId);
   const bgm = spec.assets.find((asset) => asset.id === spec.editSpec.globalAudio.bgmAssetId);
   const narrationSegments = spec.editSpec.globalAudio.narrationSegments;
-  const narrationClipsAreDefault = narrationSegments.every((segment) => !segment.muted && segment.gainDb === 0 && segment.playbackRate === 1);
+  // Keep browser playback on one continuously decoded master whenever clip
+  // timing has not been rate-stretched. Mute and gain edits are expressed as a
+  // frame-level volume curve instead of mounting a new WAV element per scene.
+  // This removes decoder hand-offs and audible stalls at clip boundaries.
+  const canUseNarrationMaster = Boolean(narration?.src) && narrationSegments.every((segment) => segment.playbackRate === 1);
   const narrationTrack = spec.editSpec.tracks.find((track) => track.id === 'audio-narration');
   const musicTrack = spec.editSpec.tracks.find((track) => track.id === 'audio-music');
   const hasAudioSolo = spec.editSpec.tracks.some((track) => track.kind === 'audio' && track.solo);
@@ -61,6 +65,12 @@ export function VideoComposition({spec}: VideoCompositionProps) {
     || spec.editSpec.globalAudio.bgmMuted
     ? 0
     : 10 ** ((musicTrack.gainDb + spec.editSpec.globalAudio.bgmGainDb) / 20);
+  const narrationMasterVolume = (frame: number) => {
+    if (!narrationSegments.length) return narrationVolume;
+    const segment = narrationSegments.find((item) => frame >= item.startFrame && frame < item.startFrame + item.durationFrames);
+    if (!segment || segment.muted) return 0;
+    return narrationVolume * 10 ** (segment.gainDb / 20);
+  };
   const bgmVolume = (frame: number) => {
     const lastFrame = Math.max(1, compiled.durationInFrames - 1);
     const fadeInFrames = Math.max(1, Math.min(spec.canvas.fps, Math.floor(lastFrame / 3)));
@@ -75,15 +85,15 @@ export function VideoComposition({spec}: VideoCompositionProps) {
   };
   return (
     <AbsoluteFill style={{backgroundColor: spec.style.tokens.background}}>
-      {narration?.src && narrationClipsAreDefault
-        ? <Audio src={narration.src.startsWith('/') ? staticFile(narration.src.slice(1)) : narration.src} volume={narrationVolume}/>
-        : narrationSegments.map((segment) => {
+      {narration?.src && canUseNarrationMaster
+        ? <Audio name="A1 · Narration master" src={narration.src.startsWith('/') ? staticFile(narration.src.slice(1)) : narration.src} volume={narrationMasterVolume}/>
+        : narrationSegments.map((segment, index) => {
         const asset = spec.assets.find((item) => item.id === segment.assetId);
         if (!asset?.src || segment.muted) return null;
         const source = asset.src.startsWith('/') ? staticFile(asset.src.slice(1)) : asset.src;
-        return <Sequence key={segment.assetId} from={segment.startFrame} durationInFrames={segment.durationFrames} name={`Narration · ${segment.sceneId}`}><Audio src={source} playbackRate={segment.playbackRate} volume={narrationVolume * 10 ** (segment.gainDb / 20)}/></Sequence>;
+        return <Sequence key={`${segment.assetId}-${index}`} from={segment.startFrame} durationInFrames={segment.durationFrames} premountFor={Math.min(spec.canvas.fps * 2, segment.startFrame)} name={`Narration · ${segment.sceneId}`}><Audio src={source} playbackRate={segment.playbackRate} volume={narrationVolume * 10 ** (segment.gainDb / 20)}/></Sequence>;
       })}
-      {bgm?.src && <Audio src={bgm.src.startsWith('/') ? staticFile(bgm.src.slice(1)) : bgm.src} volume={bgmVolume} />}
+      {bgm?.src && <Audio name="A2 · Music master" src={bgm.src.startsWith('/') ? staticFile(bgm.src.slice(1)) : bgm.src} volume={bgmVolume} />}
       {compiled.scenes.map((scene) => {
         const Component = components[scene.component];
         return (

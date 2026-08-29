@@ -4,29 +4,7 @@
 
 πCut 将完整 Pi coding-agent runtime、结构化 `VideoSpec`、Remotion、HyperFrames、联网素材、TTS 与传统剪辑工作台组合在同一个本地应用中。Pi 保留原生会话、工具循环、Skills、Extensions、完整 transcript、自动压缩和 coding tools；视频框架不替模型做关键词规划，也不把自然语言编辑压缩成固定正则规则。
 
-核心约定只有一条：视频状态以版本化 `VideoSpec` 为单一事实源。Agent、Timeline、Inspector、Canvas 与两个渲染引擎读写同一份工程状态，因此每次修改都可预览、撤销、校验和追溯。
-
-## 当前已经跑通
-
-- 原生运行时：`@earendil-works/pi-coding-agent@0.84.2/AgentSession`，不是单轮 completion，也不是 `pi-agent-core` 的受控套壳。
-- 模型链路：复用本机 Pi 设置和登录态，当前实测为 `openai-codex/gpt-5.5 · medium → chatgpt.com/backend-api`。
-- 原生资源栈：项目 Trust、`AGENTS.md`、`.agents/skills`、`.pi` 资源、Prompt Templates、Extensions、完整 coding tools、自动重试与 compaction。
-- 不设置 Pi 工具白名单；14 个 πCut 视频工具作为领域能力附加到原生 `read / bash / edit / write` 等工具之上。
-- 无关键词 Planner、无 regex Patch、无 `editorNote` 伪修改、无“远程失败后静默降级成本地模板”。
-- 新建视频从专用空白生成画布开始，强制完成 `draft_storyboard`，不会载入 Transformer、云朵或其他缓存示例。
-- UI 指代注入：`selectedSceneId`、播放头、Inspector Tab、选中字段、revision 会随指令进入本轮隐藏结构化上下文。
-- 持久化后台 Agent Job：立即返回工作台，通过 SSE 显示实时工具轨迹；浏览器断线或进程中断后，从原生 transcript 与当前 VideoSpec 恢复。
-- 多会话持久化：每个会话保存独立 VideoSpec、聊天、原生 Pi session、Agent runs、ChangeSet、审批状态、素材和输出。
-- Remotion / HyperFrames / 自主路由三种选择；路由得分、依据、实际执行和 fallback 写入轨迹与 `RenderManifest.json`。
-- 六类可渲染组件：自由组版的 `SceneCanvas`，以及 `TextHero`、`SplitScreen`、`DynamicChart`、`CaptionKaraoke`、`MediaBroll` 预制积木。
-- `SceneCanvas` 支持最多 40 个文字、徽标、指标、公式、代码、图形、线条、图表、图像和粒子图层，每层独立坐标、样式、入场时序与镜头运动；Agent 不再被五种卡片模板限制。
-- 视频、叠加、字幕、旁白、BGM 多轨时间轴；支持选择、定位、移动、裁切、分割、复制、删除、关键帧、效果、转场和撤销。镜头跨过相邻 clip 中心时会波纹重排，同步 StorySpec 与旁白分段，不会留下重叠的无效时间轴。
-- Inspector 的 Scene / Style / Motion 直接修改真实消费字段；全局主题同步背景、表面、文字、强调色和全部镜头。
-- 联网素材检索、本地资产化、可信下载域、许可与署名记录；当前支持 NASA、NOAA、Wikimedia 等来源路由。
-- SiliconFlow TTS 作为独立可选服务，不参与 Pi 的规划模型链路。
-- G1–G7 确定性质量门；失败时保留可见画布并允许 Agent 继续诊断/修复，不用“加载失败”替代编辑状态。
-- 正式交付：MP4、SRT、VideoSpec、AssetManifest、RenderManifest 与视频 SHA-256。
-- 项目级官方技能：9 个 HyperFrames Skills、12 个 Remotion Skills，ResourceLoader 实测 23 skills、0 diagnostics。
+视频状态以版本化 `VideoSpec` 为单一事实源。Agent、Timeline、Inspector、Canvas 与两个渲染引擎读写同一份工程状态，因此每次修改都可预览、撤销、校验和追溯。
 
 ## 架构
 

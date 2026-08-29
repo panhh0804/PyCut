@@ -49,6 +49,16 @@
 .genre-chip.active{border-color:rgba(56,224,193,.55);background:rgba(56,224,193,.09);color:var(--teal)}
 .genre-chip.active small{color:rgba(56,224,193,.75)}
 .genre-hint{display:block;margin:-2px 0 7px;color:#5d7789;font-size:9px;line-height:1.5}
+.chat-session-drawer{max-height:min(440px,58vh);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#294454 transparent}
+.session-new>.genre-picker{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.session-new>.genre-picker .genre-chip{min-width:0;height:auto;min-height:44px;padding:7px 8px;align-items:flex-start;justify-content:center}
+.session-new>.session-new-submit{display:grid;grid-template-columns:minmax(0,1fr) 72px;align-items:center;gap:7px;margin-top:8px}
+.session-new>.session-new-submit input{width:100%}
+.session-new>.session-new-submit button{width:72px;min-width:72px;padding:0 8px;display:flex;align-items:center;justify-content:center;gap:5px;white-space:nowrap;position:relative;z-index:1}
+.session-new>.session-new-submit button span{display:inline}
+.session-new>.session-new-submit button:focus-visible{outline:2px solid #e7fffb;outline-offset:2px}
+.chat-session-drawer>.session-list{border-top:1px solid var(--line)}
+@media(max-width:1180px){.session-new>.session-new-submit{grid-template-columns:minmax(0,1fr) 40px}.session-new>.session-new-submit button{width:40px;min-width:40px}.session-new>.session-new-submit button span{display:none}}
 .chat-genre-bar{display:flex;align-items:center;gap:5px;padding:0 10px 10px;flex-wrap:wrap}
 .chat-genre-bar>span{color:#526d7f;font-size:9px;font-weight:800}
 .chat-genre-bar button{border:1px solid var(--line);background:transparent;color:var(--muted);font-size:8px;border-radius:999px;padding:4px 10px;cursor:pointer}

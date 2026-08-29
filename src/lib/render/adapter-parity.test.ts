@@ -39,4 +39,25 @@ describe('dual renderer contract', () => {
     expect(html).not.toContain('semantic direction prompt only');
     expect(html).toContain('scale:1.04');
   });
+
+  it('keeps grouped camera members intact and renders extended chart families in HyperFrames', () => {
+    const spec = createDefaultVideoSpec('free-canvas-groups');
+    spec.editSpec.scenes[0].component = 'SceneCanvas';
+    spec.editSpec.scenes[0].props = {
+      background: {type: 'solid', colors: ['#071522']},
+      layers: [
+        {id: 'camera-shape', type: 'shape', x: 0, y: 0, width: 100, height: 100, style: {backgroundColor: '#10243A'}, motion: {preset: 'fade'}},
+        {id: 'mixed-group', type: 'group', x: 5, y: 5, width: 90, height: 90, memberIds: ['camera-shape'], style: {}, motion: {preset: 'rise'}},
+        {id: 'history', type: 'chart', chartType: 'timeline', x: 8, y: 12, width: 84, height: 32, labels: ['起点', '现在'], values: [1, 2], style: {color: '#76E6FF'}, motion: {preset: 'draw'}},
+        {id: 'relations', type: 'chart', chartType: 'network', x: 8, y: 48, width: 40, height: 40, labels: ['A', 'B', 'C'], values: [2, 4, 3], style: {color: '#FFB166'}, motion: {preset: 'rise'}},
+        {id: 'regions', type: 'chart', chartType: 'map', x: 52, y: 48, width: 40, height: 40, labels: ['东', '西'], values: [3, 6], style: {color: '#A98BFF'}, motion: {preset: 'scale'}},
+      ],
+    };
+    const html = createHyperFramesHtml(spec);
+    expect(html).toContain('id="scene-01-mixed-group"');
+    expect(html).toContain('id="scene-01-camera-shape"');
+    expect(html).toContain('>起点</text>');
+    expect(html).toContain('>C</text>');
+    expect(html).toContain('M9 28L25 16L42 20');
+  });
 });

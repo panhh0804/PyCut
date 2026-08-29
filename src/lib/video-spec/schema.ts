@@ -110,6 +110,29 @@ export const sceneCanvasPropsSchema = z.object({
       claimed.add(memberId);
     });
   });
+  const containers = new Map(canvas.layers
+    .filter((layer) => layer.type === 'group' || layer.type === 'mask')
+    .map((layer) => [layer.id, layer.memberIds] as const));
+  const visited = new Set<string>();
+  const visiting = new Set<string>();
+  const reported = new Set<string>();
+  const visit = (id: string, path: string[]) => {
+    if (visiting.has(id)) {
+      const cycle = [...path.slice(path.indexOf(id)), id].join(' → ');
+      if (!reported.has(cycle)) {
+        reported.add(cycle);
+        const index = canvas.layers.findIndex((layer) => layer.id === id);
+        context.addIssue({code: 'custom', path: ['layers', Math.max(0, index), 'memberIds'], message: `group/mask 不能循环引用：${cycle}`});
+      }
+      return;
+    }
+    if (visited.has(id)) return;
+    visiting.add(id);
+    (containers.get(id) ?? []).filter((memberId) => containers.has(memberId)).forEach((memberId) => visit(memberId, [...path, id]));
+    visiting.delete(id);
+    visited.add(id);
+  };
+  containers.forEach((_members, id) => visit(id, []));
 });
 
 export const componentPropsSchemas = {

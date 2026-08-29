@@ -34,7 +34,7 @@ export function routeRenderBackend(spec: VideoSpec): RenderRouteDecision {
   const canvasLayers = canvasScenes.flatMap((scene) => Array.isArray(scene.props.layers) ? scene.props.layers as Array<{type?: unknown}> : []);
   const canvasMediaLayers = canvasLayers.filter((layer) => layer.type === 'image' || layer.type === 'video').length;
   const canvasDataLayers = canvasLayers.filter((layer) => layer.type === 'chart').length;
-  const canvasDomLayers = canvasLayers.filter((layer) => ['text', 'badge', 'metric', 'formula', 'code', 'shape', 'line', 'particles'].includes(String(layer.type))).length;
+  const canvasDomLayers = canvasLayers.filter((layer) => ['text', 'badge', 'metric', 'formula', 'code', 'shape', 'line', 'particles', 'svg', 'icon', 'gradientMesh', 'noise', 'group', 'mask', 'subComposition'].includes(String(layer.type))).length;
   const editorialScenes = visibleScenes.filter((scene) => ['TextHero', 'SplitScreen', 'CaptionKaraoke'].includes(scene.component)).length;
 
   if (hasNarration) {
@@ -78,7 +78,7 @@ export function routeRenderBackend(spec: VideoSpec): RenderRouteDecision {
     if (scene.backend !== 'either') return {sceneId: scene.id, preferred: scene.backend, reason: `VideoSpec 将该镜头显式限定为 ${scene.backend}`};
     if (scene.component === 'SceneCanvas') {
       const layers = Array.isArray(scene.props.layers) ? scene.props.layers as Array<{type?: unknown}> : [];
-      const frameHeavy = layers.some((layer) => layer.type === 'image' || layer.type === 'video' || layer.type === 'chart') || scene.keyframes.length > 0;
+      const frameHeavy = layers.some((layer) => ['image', 'video', 'chart', 'subComposition', 'noise'].includes(String(layer.type))) || scene.keyframes.length > 0;
       return frameHeavy
         ? {sceneId: scene.id, preferred: 'remotion', reason: `SceneCanvas 的 ${layers.length} 个图层包含媒体、图表或关键帧，需要逐帧插值`}
         : {sceneId: scene.id, preferred: 'hyperframes', reason: `SceneCanvas 的 ${layers.length} 个排版与图形图层适合 DOM/GSAP 编排`};

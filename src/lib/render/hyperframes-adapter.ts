@@ -28,7 +28,7 @@ function localMediaSource(asset: VideoSpec['assets'][number] | undefined) {
   return asset.src.startsWith('/') ? `file://${path.join(process.cwd(), 'public', asset.src)}` : asset.src;
 }
 
-function canvasLayerMarkup(sceneId: string, layers: SceneCanvasProps['layers'], spec: VideoSpec, sceneStart: number, sceneDuration: number) {
+function canvasLayerMarkup(sceneId: string, layers: SceneCanvasProps['layers'], spec: VideoSpec, sceneStart: number, sceneDuration: number, rootIds?: ReadonlySet<string>) {
   const iconPaths: Record<string, string[]> = {
     cloud: ['M22 74H78C92 74 96 54 83 48C82 29 58 20 46 35C30 31 19 43 22 56C9 60 10 74 22 74Z'],
     sun: ['M50 26A24 24 0 1 0 50 74A24 24 0 1 0 50 26', 'M50 5V17M50 83V95M5 50H17M83 50H95M18 18L27 27M73 73L82 82M82 18L73 27M27 73L18 82'],
@@ -75,6 +75,24 @@ function canvasLayerMarkup(sceneId: string, layers: SceneCanvasProps['layers'], 
         const arcs = values.map((value, index) => {const portion = Math.max(0, value) / total * 251.2; const arc = `<circle cx="50" cy="50" r="40" fill="none" stroke="${escapeHtml(index % 2 ? style.borderColor ?? '#FFFFFF' : style.color ?? spec.style.tokens.primary)}" stroke-width="13" stroke-dasharray="${portion} ${251.2 - portion}" stroke-dashoffset="${-consumed}" transform="rotate(-90 50 50)"/>`; consumed += portion; return arc;}).join('');
         return `<div ${base}><svg viewBox="0 0 100 100">${arcs}</svg></div>`;
       }
+      if (layer.chartType === 'network' || layer.chartType === 'flow') {
+        const nodes = labels.map((label, index) => ({
+          label,
+          x: layer.chartType === 'flow' ? 12 + index * 76 / Math.max(1, labels.length - 1) : 50 + Math.cos(index / Math.max(1, labels.length) * Math.PI * 2) * 34,
+          y: layer.chartType === 'flow' ? 50 : 50 + Math.sin(index / Math.max(1, labels.length) * Math.PI * 2) * 34,
+        }));
+        const links = nodes.slice(1).map((node, index) => `<line x1="${nodes[index].x}" y1="${nodes[index].y}" x2="${node.x}" y2="${node.y}" stroke="${escapeHtml(style.color ?? spec.style.tokens.primary)}" stroke-opacity=".6" stroke-width="1.5"/>`).join('');
+        const nodeMarkup = nodes.map((node, index) => `<g><circle cx="${node.x}" cy="${node.y}" r="${5 + (values[index] ?? 0) / maximum * 5}" fill="${escapeHtml(style.color ?? spec.style.tokens.primary)}44" stroke="${escapeHtml(style.color ?? spec.style.tokens.primary)}"/><text x="${node.x}" y="${node.y + 14}" text-anchor="middle" fill="currentColor" font-size="5">${escapeHtml(node.label)}</text></g>`).join('');
+        return `<div ${base}><svg viewBox="0 0 100 100">${links}${nodeMarkup}</svg></div>`;
+      }
+      if (layer.chartType === 'timeline') {
+        const events = labels.map((label, index) => {const x = 8 + index / Math.max(1, labels.length - 1) * 84; return `<g><circle cx="${x}" cy="50" r="4" fill="${escapeHtml(style.color ?? spec.style.tokens.primary)}"/><text x="${x}" y="${index % 2 ? 68 : 37}" text-anchor="middle" fill="currentColor" font-size="5">${escapeHtml(label)}</text></g>`;}).join('');
+        return `<div ${base}><svg viewBox="0 0 100 100"><line x1="8" y1="50" x2="92" y2="50" stroke="${escapeHtml(style.color ?? spec.style.tokens.primary)}" stroke-width="2"/>${events}</svg></div>`;
+      }
+      if (layer.chartType === 'map') {
+        const markers = values.map((value, index) => `<circle cx="${20 + index * 61 / Math.max(1, values.length - 1)}" cy="${32 + (index * 23) % 42}" r="${2 + value / maximum * 7}" fill="${escapeHtml(style.color ?? spec.style.tokens.primary)}" fill-opacity=".7"/>`).join('');
+        return `<div ${base}><svg viewBox="0 0 100 100"><path d="M9 28L25 16L42 20L52 13L71 22L90 18L84 42L91 57L72 68L62 88L44 78L27 84L14 65L20 48Z" fill="${escapeHtml(style.color ?? spec.style.tokens.primary)}22" stroke="${escapeHtml(style.color ?? spec.style.tokens.primary)}" stroke-width="1.5"/>${markers}</svg></div>`;
+      }
       const bars = (layer.values ?? []).map((value, index) => `<i><strong>${value}</strong><b style="height:${value / maximum * 76}%"></b><span>${escapeHtml(layer.labels?.[index])}</span></i>`).join('');
       return `<div ${base}><div class="free-chart">${bars}</div></div>`;
     }
@@ -91,7 +109,10 @@ function canvasLayerMarkup(sceneId: string, layers: SceneCanvasProps['layers'], 
     const tag = layer.type === 'formula' || layer.type === 'code' ? 'code' : 'span';
     return `<div ${base}><${tag}>${escapeHtml(layer.content).replaceAll('\n', '<br>')}</${tag}></div>`;
   };
-  return layers.filter((layer) => !memberIds.has(layer.id)).map((layer) => renderLayer(layer)).join('');
+  return layers
+    .filter((layer) => !memberIds.has(layer.id) && (!rootIds || rootIds.has(layer.id)))
+    .map((layer) => renderLayer(layer))
+    .join('');
 }
 
 const effectFilter = (scene: ReturnType<typeof compileVideoSpec>['scenes'][number]) => scene.effects
@@ -135,9 +156,12 @@ function sceneMarkup(scene: ReturnType<typeof compileVideoSpec>['scenes'][number
   if (scene.component === 'SceneCanvas') {
     const canvas = props as unknown as SceneCanvasProps;
     const canvasBase = base.replace(/style="([^"]*)"/, (_match, styles: string) => `style="${styles};background:${escapeHtml(canvasBackground(canvas))}"`);
-    const cameraLayers = canvas.layers.filter((layer) => ['shape', 'line', 'image', 'video', 'particles'].includes(layer.type));
-    const contentLayers = canvas.layers.filter((layer) => !cameraLayers.includes(layer));
-    return `<section ${canvasBase}><div id="${motionId}" class="scene-motion free-canvas"><div id="${scene.id}-camera" class="free-camera">${canvasLayerMarkup(scene.id, cameraLayers, spec, scene.startMs / 1000, scene.durationMs / 1000)}</div><div class="free-content">${canvasLayerMarkup(scene.id, contentLayers, spec, scene.startMs / 1000, scene.durationMs / 1000)}</div></div></section>`;
+    const memberIds = new Set(canvas.layers.flatMap((layer) => layer.type === 'group' || layer.type === 'mask' ? layer.memberIds : []));
+    const rootLayers = canvas.layers.filter((layer) => !memberIds.has(layer.id));
+    const cameraTypes = new Set(['shape', 'line', 'image', 'video', 'particles', 'gradientMesh', 'noise']);
+    const cameraRootIds = new Set(rootLayers.filter((layer) => cameraTypes.has(layer.type)).map((layer) => layer.id));
+    const contentRootIds = new Set(rootLayers.filter((layer) => !cameraRootIds.has(layer.id)).map((layer) => layer.id));
+    return `<section ${canvasBase}><div id="${motionId}" class="scene-motion free-canvas"><div id="${scene.id}-camera" class="free-camera">${canvasLayerMarkup(scene.id, canvas.layers, spec, scene.startMs / 1000, scene.durationMs / 1000, cameraRootIds)}</div><div class="free-content">${canvasLayerMarkup(scene.id, canvas.layers, spec, scene.startMs / 1000, scene.durationMs / 1000, contentRootIds)}</div></div></section>`;
   }
   return `<section ${base}><div id="${motionId}" class="scene-motion"><div class="kicker">${escapeHtml(text(props, 'kicker'))}</div><div class="scene-head"><h2>${escapeHtml(text(props, 'title'))}</h2><div class="tags">${strings(props, 'tags').map((tag) => `<span>${escapeHtml(tag)}</span>`).join('')}</div></div><div class="split"><article><small>LAYER 01</small><h3>${escapeHtml(text(props, 'leftTitle'))}</h3><p>${escapeHtml(text(props, 'leftBody')).replaceAll('\n', '<br>')}</p></article><article><small>LAYER 02</small><h3>${escapeHtml(text(props, 'rightTitle'))}</h3><p>${escapeHtml(text(props, 'rightBody')).replaceAll('\n', '<br>')}</p></article></div></div></section>`;
 }

@@ -110,4 +110,19 @@ describe('VideoSpec compiler contract', () => {
     expect(report.gates.find((gate) => gate.id === 'G5')?.status).toBe('fail');
     expect(report.gates.find((gate) => gate.id === 'G5')?.details.join('\n')).toContain('只有装饰图层可进入出血区');
   });
+
+  it('rejects indirect group and mask cycles before either renderer recurses', () => {
+    const spec = createDefaultVideoSpec('canvas-group-cycle');
+    spec.editSpec.scenes[0].component = 'SceneCanvas';
+    spec.editSpec.scenes[0].props = {
+      background: {type: 'solid', colors: ['#071522']},
+      layers: [
+        {id: 'group-a', type: 'group', x: 0, y: 0, width: 100, height: 100, memberIds: ['mask-b']},
+        {id: 'mask-b', type: 'mask', x: 0, y: 0, width: 100, height: 100, memberIds: ['group-a'], maskShape: 'circle'},
+      ],
+    };
+    const report = validateVideoSpec(spec);
+    expect(report.gates.find((gate) => gate.id === 'G5')?.status).toBe('fail');
+    expect(report.gates.find((gate) => gate.id === 'G5')?.details.join('\n')).toContain('不能循环引用');
+  });
 });
