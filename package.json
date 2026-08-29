@@ -2,6 +2,7 @@
   "name": "picut",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "πCut - agentic video compiler and human-in-the-loop editing studio",
   "scripts": {
     "dev": "next dev",

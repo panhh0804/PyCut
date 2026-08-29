@@ -382,4 +382,4 @@ src/
 
 ## License
 
-仓库尚未指定开源许可证。正式公开分发前，请由项目所有者选择并补充 `LICENSE`。
+本项目基于 [MIT License](LICENSE) 开源。
